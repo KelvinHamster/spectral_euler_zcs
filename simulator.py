@@ -10,7 +10,7 @@ class Simulator1D():
     original from Knowles & Yeh (2018)
     """
 
-    def __init__(self, bathymetry, dt, dx, eta0, phiS0, 
+    def __init__(self, bathymetry, dt, dx, eta0, phiS0, zeta_x = None,
             M = 5, v = 0.7, g = 9.81, h0 = None):
         """
         Initializes a Simulator instance with the given parameters:
@@ -40,7 +40,7 @@ class Simulator1D():
         
         self.M = M; self.v = v; self.g = g
         if h0 == None:
-            self.h0 = bathymetry[0]
+            self.h0 = -bathymetry[0]
         else:
             self.h0 = h0
         
@@ -50,7 +50,9 @@ class Simulator1D():
         self.Nx = len(bathymetry)
         self.sim_length = self.Nx * dx # total length
 
-        self.x = np.linspace(0,self.sim_length,self.Nx)
+        # each x corresponds with a half open interval [--) of
+        # size dx
+        self.x = np.linspace(0,(self.sim_length-dx),self.Nx)
 
         # initialize wavenumber: use double-domains, should match
         # domain of FFT
@@ -67,15 +69,19 @@ class Simulator1D():
         self.kxdb_im = self.kxdb * complex(0,1)
         self.kxdb_im *= self.chi
         
-        # gradient of bathymetry; just use divided difference
-        self.zeta_x = np.zeros(self.Nx)
-        self.zeta_x[1:-1] = (self.zeta[2:] - self.zeta[:-2])/(2*dx)
+        if zeta_x == None:
+            # gradient of bathymetry; just use divided difference
+            self.zeta_x = np.zeros(self.Nx)
+            self.zeta_x[1:-1] = (self.zeta[2:] - self.zeta[:-2])/(2*dx)
 
-        # fourier_zetadb = np.fft.fft(np.append(self.zeta, np.flip(self.zeta)))
-        # fourier_zetadb *= self.kxdb_im
-        # self.zeta_x = np.real(np.fft.ifft(fourier_zetadb))[0:self.Nx]
+            # fourier_zetadb = np.fft.fft(np.append(self.zeta, 
+            #           np.fliplr([self.zeta])))
+            # fourier_zetadb *= self.kxdb_im
+            # self.zeta_x = np.real(np.fft.ifft(fourier_zetadb))[0:self.Nx]
+        else:
+            self.zeta_x = zeta_x
 
-        self.j = 0 # time step
+        self.t = 0 # time in the simulation
 
     def step_RK4(self, P_atmos = None):
         """
@@ -120,7 +126,7 @@ class Simulator1D():
         eta1 *= self.dt/6; pS1 *= self.dt/6
         self.eta += eta1; self.phiS += pS1
 
-        self.j += 1
+        self.t += dt
         
 
 
@@ -139,11 +145,11 @@ class Simulator1D():
         P_a      -- atmospheric pressure at a given x.
         """
         #gradients:
-        fourier_edb = np.fft.fft(np.append(eta, np.flip(eta)))
+        fourier_edb = np.fft.fft(np.append(eta, np.fliplr([eta])[0]))
         fourier_edb *= self.kxdb_im
         eta_x = np.real(np.fft.ifft(fourier_edb))[0:self.Nx]
 
-        fourier_pSdb = np.fft.fft(np.append(phiS, np.flip(phiS)))
+        fourier_pSdb = np.fft.fft(np.append(phiS, np.fliplr([phiS])[0]))
         fourier_pSdb *= self.kxdb_im
         phiS_x = np.real(np.fft.ifft(fourier_pSdb))[0:self.Nx]
 
@@ -172,11 +178,11 @@ class Simulator1D():
         dbdzbb_mat = np.zeros((self.M, self.M, self.Nx*2))
 
         A_m_z0 = np.copy(phiS) #A_1 evaluated at z=0
-        A_m_coeff = np.fft.fft(np.append(A_m_z0, np.flip(A_m_z0)))
+        A_m_coeff = np.fft.fft(np.append(A_m_z0, np.fliplr([A_m_z0])[0]))
         A_m_coeff *= self.chi #coefficient array
 
         Bz_m_zh = np.copy(zeta_t) #(B_1)_z at z=-h, only used to get the coeffs
-        B_m_coeff = np.fft.fft(np.append(Bz_m_zh, np.flip(Bz_m_zh)))
+        B_m_coeff = np.fft.fft(np.append(Bz_m_zh, np.fliplr([Bz_m_zh])[0]))
         B_m_coeff *= self.chi #coefficient array
 
         
@@ -284,10 +290,12 @@ class Simulator1D():
                 Bz_m_zh = np.copy(zeta_x)
                 Bz_m_zh *= fst_trm; Bz_m_zh -= snd_trm
 
-                A_m_coeff = np.fft.fft(np.append(A_m_z0, np.flip(A_m_z0)))
+                A_m_coeff = np.fft.fft(np.append(A_m_z0,
+                        np.fliplr([A_m_z0])[0]))
                 A_m_coeff *= self.chi #coefficient array
 
-                B_m_coeff = np.fft.fft(np.append(Bz_m_zh, np.flip(Bz_m_zh)))
+                B_m_coeff = np.fft.fft(np.append(Bz_m_zh,
+                        np.fliplr([Bz_m_zh])[0]))
                 B_m_coeff *= self.chi #coefficient array
 
         
@@ -302,6 +310,22 @@ class Simulator1D():
                 dbdzfs_mat[m,:self.M - m,:self.Nx]
             ),axis=0)
         return w
+
+    def volume(self):
+        """
+        Calculates the volume of water at this time step. This is
+        equal to the integral of eta dx, so still water has a volume
+        of 0.
+        """
+        return np.trapz(self.eta, dx=self.dx)
+
+
+    def peak_location(self):
+        """
+        Finds and returns the position (index * dx) of the highest eta
+        value.
+        """
+        return self.dx * np.argmax(self.eta)
 
     @staticmethod
     def soliton(x0,a0,h0,Nx,dx,g = 9.81):
@@ -338,3 +362,61 @@ class Simulator1D():
             (-9/32*s2t-3/2*s4t)+(1+eta/h0)**4*(-3/16*s2t+9/16*s4t))))
 
         return (eta,ps)
+    
+    @staticmethod
+    def KY_bathym(Nx = 2**14, dx = 0.04, s0=0.002, d0 = 0.9,
+            gamma = 0.1, X1 = 4):
+        """
+        Produces a bathymetry profile similar to Knowles and Yeh's paper.
+        expects h0 = 1, but the result can be multiplied by the desired h0.
+
+        Nx    - number of points
+        dx    - spatial resolution (distance between each point)
+        s0    - nominal slope of the bathymetry
+        d0    - height of the beach plateau
+        gamma - smoothing parameter
+        X1    - position where the bathymetry should start sloping up
+        """
+        x = np.linspace(-X1,(Nx-1)*dx - X1, Nx)
+        bath = np.zeros(Nx)
+        
+        l1 = 2*gamma*d0/(s0)
+        l2 = ((1-gamma)*d0 - (s0*l1)/2)/s0 + l1
+        l3 = l2 + l1
+
+        sqr_coeff = s0/(2 * l1)
+        lin_off = s0*l1 / 2 - 1
+
+        d0 -= 1
+        for (i,x) in enumerate(x):
+            if x < 0:
+                bath[i] = -1
+            elif x < l1: # smoothed
+                bath[i] = sqr_coeff * x*x - 1
+            elif x < l2: # linear domain
+                bath[i] = lin_off + s0 * (x - l1)
+            elif x < l3: # smoothed
+                bath[i] = d0 - (sqr_coeff * (x-l3)**2)
+            else:
+                bath[i] = d0
+
+        return bath
+
+    @staticmethod
+    def KY_SIM(Nx=2**14, dx = 0.04, dt = 0.01, s0 = 1/500, x0=30, a0=0.1, h0=1):
+        """
+        Returns a new simulator similar to Knowles and Yeh's
+        initial conditions.
+
+        Nx        - Number of points (nodes) in the discreteized simulation
+        dx        - Spatial resolution
+        s0        - Slope of the bathymetry
+        x0        - location of the center of the starting soliton
+        a0        - amplitude of the soliton
+        h0        - depth of the water
+        """
+        return Simulator1D(
+            h0*Simulator1D.KY_bathym(Nx=Nx, dx=dx, s0=s0,X1 = x0*2),
+            dt, dx,
+            *Simulator1D.soliton(x0, a0, h0, Nx, dx)
+        )
