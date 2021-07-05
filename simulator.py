@@ -126,7 +126,7 @@ class Simulator1D():
         eta1 *= self.dt/6; pS1 *= self.dt/6
         self.eta += eta1; self.phiS += pS1
 
-        self.t += dt
+        self.t += self.dt
         
 
 
