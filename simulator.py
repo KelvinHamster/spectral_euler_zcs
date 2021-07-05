@@ -403,7 +403,7 @@ class Simulator1D():
         return bath
 
     @staticmethod
-    def KY_SIM(Nx=2**14, dx = 0.04, dt = 0.01, s0 = 1/500, x0=30, a0=0.1, h0=1):
+    def KY_SIM(Nx=2**14, dx = 0.04, dt = 0.01, s0 = 1.0/500, x0=30, a0=0.1, h0=1):
         """
         Returns a new simulator similar to Knowles and Yeh's
         initial conditions.
