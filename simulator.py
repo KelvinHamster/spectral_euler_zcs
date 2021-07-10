@@ -1,5 +1,6 @@
 import math
 import numpy as np
+from integrator import Integrator1D
 
 class Simulator1D():
     """
@@ -29,9 +30,11 @@ class Simulator1D():
 
             M    -- Terms in the pertubation expansion (higher number is more
                     accurate, but requires more computation) [default: 5]
-            v    -- lowpass threshold. Any wavenumber greater than the largest
-                    wavenumber times v is clipped off each timestep. Expects
-                    a float in (0,1); [default: 0.7]
+            v    -- lowpass threshold. If v is a number, any wavenumber greater
+                    than the largest wavenumber times v is clipped off each
+                    timestep. v can also be a function that takes a wavenumber
+                    and the peak wavenumber, and returns how it should be scaled
+                    [default: 0.7]
             g    -- acceleration due to gravity. [default: 9.81]
             h0   -- base still water depth [default: bathymetry[0]]
         """
@@ -64,7 +67,11 @@ class Simulator1D():
         #magnitude of wavenumber
         self.kappadb = np.abs(self.kxdb)
         #lowpass filter; multiply to use
-        self.chi = self.kappadb <= (v*max(self.kappadb))
+        k_peak = max(self.kappadb)
+        if callable(v):
+            self.chi = np.array([v(k,k_peak) for k in self.kappadb])
+        else:
+            self.chi = self.kappadb <= (v*k_peak)
         #ik for fast reference when differentiating
         self.kxdb_im = self.kxdb * complex(0,1)
         self.kxdb_im *= self.chi
@@ -83,52 +90,55 @@ class Simulator1D():
 
         self.t = 0 # time in the simulation
 
-    def step_RK4(self, P_atmos = None):
+    def step(self, method, P_atmos = None, *args, **kwargs):
         """
-        Steps the simulation by one using a 4th order Runge-Kutta method.
-        zeta and atmospheric pressure is assumed to be unchanging (zeta_t = 0)
-        over time.
+        Steps the simulation forward using the given method. Any arguments
+        for the method can be specified as optional arguments or keyword
+        arguments.
 
-        P_atmos    -- atmospheric pressure at every point, should have the
-                      same samples as bathymetry. Expected to be a numpy
-                      array [default: constant 0]
+        method
+              - The method to use. This can be a string or a function. When
+                a string is passed the method in integrator.py of the same
+                name is used.
+
+        P_atmos
+              - Atmospheric pressure at the surface.
         """
-        zeta_t = np.zeros(self.Nx)
-        if P_atmos == None:
-            #zeta_t does not change, so we can just go by reference
-            P_atmos = zeta_t
-        dt2 = self.dt/2
+        if callable(method):
+            method(self,P_atmos,*args,**kwargs)
+        else:
+            getattr(Integrator1D, method)(self,P_atmos,*args,**kwargs)
 
-        eta1,pS1 = self.calculate_time_derivatives(self.eta, self.phiS,
-                self.zeta, self.zeta_x, zeta_t, P_atmos)
-        eta_shft = eta1*dt2; pS_shft = pS1*dt2
-        eta_shft+= self.eta; pS_shft+= self.phiS
+    def calculate_gradient(self, vec):
+        """
+        Takes a vectorized surface vec, and calculates its spatial derivative
+        using an FFT trick.
 
-        eta2,pS2 = self.calculate_time_derivatives(eta_shft, pS_shft,
-                self.zeta, self.zeta_x, zeta_t, P_atmos)
-        np.copyto(eta_shft,eta2); np.copyto(pS_shft,pS2)
-        eta_shft *= dt2     ; pS_shft *= dt2
-        eta_shft += self.eta; pS_shft += self.phiS
+        Calling calculate_gradient(eta) returns eta_x
+        """
+        fourier_vec = np.fft.fft(np.append(vec, np.fliplr([vec])[0]))
+        fourier_vec *= self.kxdb_im
+        vec_x = np.real(np.fft.ifft(fourier_vec))[0:self.Nx]
+        return vec_x
 
-        eta3,pS3 = self.calculate_time_derivatives(eta_shft, pS_shft,
-                self.zeta, self.zeta_x, zeta_t, P_atmos)
-        np.copyto(eta_shft,eta3); np.copyto(pS_shft,pS3)
-        eta_shft *= self.dt     ; pS_shft *= self.dt
-        eta_shft += self.eta; pS_shft += self.phiS
+    def diff_eval(self, eta, phiS_x, eta_x, w, P_a):
+        """
+        Evaluates the differential equation based on the given parameters.
+        Returns a tuple (eta_t, phiS_t) of the time derivatives.
 
-        eta4,pS4 = self.calculate_time_derivatives(eta_shft, pS_shft,
-                self.zeta, self.zeta_x, zeta_t, P_atmos)
-
-        eta2 *= 2; pS2 *= 2; eta3 *= 2; pS3 *= 2
-        eta1 += eta2; pS1 += pS2
-        eta1 += eta3; pS1 += pS3
-        eta1 += eta4; pS1 += pS4
-        eta1 *= self.dt/6; pS1 *= self.dt/6
-        self.eta += eta1; self.phiS += pS1
-
-        self.t += self.dt
-        
-
+        phiS_x    - gradient of phiS
+        eta_x     - gradient of eta
+        w         - vertical velocity at the surface
+        P_a       - atomspheric pressure at the surface
+        """
+        eta_x_sq_p1 = eta_x**2
+        eta_x_sq_p1 += 1
+        # not sure if these are in-place operations;
+        # if not, this can be optimized.
+        return (
+            -phiS_x*eta_x + eta_x_sq_p1*w,
+            -P_a - self.g*eta - (phiS_x**2)/2 + eta_x_sq_p1/2*(w**2)
+        )
 
     def calculate_time_derivatives(self, eta, phiS, zeta, zeta_x, zeta_t, P_a):
         """
@@ -142,27 +152,23 @@ class Simulator1D():
         zeta     -- bathymetry, with 0 corresponding with a depth of -h0
         zeta_x   -- spatial derivative of zeta
         zeta_t   -- time derivative of zeta
-        P_a      -- atmospheric pressure at a given x.
+        P_a      -- atmospheric pressure at every point, should have the
+                    same samples as bathymetry. Expected to be a numpy
+                    array or a function of
+                    (eta,phiS,eta_x,phiS_x,w) that returns a numpy array.
+                    [default: constant 0]
         """
         #gradients:
-        fourier_edb = np.fft.fft(np.append(eta, np.fliplr([eta])[0]))
-        fourier_edb *= self.kxdb_im
-        eta_x = np.real(np.fft.ifft(fourier_edb))[0:self.Nx]
-
-        fourier_pSdb = np.fft.fft(np.append(phiS, np.fliplr([phiS])[0]))
-        fourier_pSdb *= self.kxdb_im
-        phiS_x = np.real(np.fft.ifft(fourier_pSdb))[0:self.Nx]
+        eta_x = self.calculate_gradient(eta)
+        phiS_x = self.calculate_gradient(phiS)
 
         w = self.vertvel(eta, phiS, zeta, zeta_x, zeta_t)
 
-        eta_x_sq_p1 = eta_x**2
-        eta_x_sq_p1 += 1
-        # not sure if these are in-place operations;
-        # if not, this can be optimized.
-        return (
-            -phiS_x*eta_x + eta_x_sq_p1*w,
-            -P_a - self.g*eta - (phiS_x**2)/2 + eta_x_sq_p1/2*(w**2)
-        )
+        if callable(P_a):
+            return self.diff_eval(eta, phiS_x, eta_x, w,
+                P_a(eta,phiS,eta_x,phiS_x,w))
+        else:
+            return self.diff_eval(eta, phiS_x, eta_x, w, P_a)
 
 
     def vertvel(self, eta, phiS, zeta, zeta_x, zeta_t):
@@ -189,7 +195,7 @@ class Simulator1D():
         j_indices = np.array(range(self.M))
 
         #we will use kh alot
-        kxdbh = self.kxdb * self.h0
+        kxdbh = self.kxdb * self.h0 * self.chi
         tanh_kh = np.tanh(kxdbh)
         sech_kh = np.cosh(kxdbh); sech_kh **= -1
 
@@ -327,6 +333,275 @@ class Simulator1D():
         """
         return self.dx * np.argmax(self.eta)
 
+    def zeta_at(self, x):
+        """
+        Finds the value of zeta at a given x position. If x is not a
+        multiple of dx, zeta is evaluated from a linear interpolation.
+
+        x
+              - a number to evaluate zeta at.
+        """
+        i = math.floor(x/self.dx)
+        i = max(0,min(i, self.Nx - 2))
+
+        z0 = self.zeta[i]
+        z1 = self.zeta[i+1]
+
+        d = x/self.dx - i
+        return z0 + (z1-z0)*d
+
+    def run_simulation(self, saveplot_dt, savedata_dt, directory,
+            should_continue = lambda sim: sim.t > 500,
+            integrator = lambda sim: sim.step("RK4"),
+            plot_kwargs = {},
+            save_eta = None,
+            save_phi = None,
+            loop_callback = None):
+        """
+        Automatically integrates eta and phiS over a set of timesteps,
+        saving plots and/or data at given intervals in time.
+
+        saveplot_dt
+                  - the timestep between saved plots. This number is rounded
+                    to the nearest multiple of the simulation dt. If this
+                    value does not round to a positive number, plots are not
+                    saved. Plots are saved as PNG files with a name
+                    corresponding to the order it is saved in. A plot with
+                    number 'i' represents the data at time 'i*saveplot_dt'
+
+        savedata_dt
+                  - the timestep between saved data. This number is rounded
+                    to the nearest multiple of the simulation dt. If this
+                    value does not round to a positive number, data is not
+                    saved. Data is saved as a json file with name 'dat.json'
+                    which is created regardless if data should be saved or not.
+                    In the case that data is not saved, only the metadata of
+                    the simulation is stored.
+        
+        directory
+                  - the directory to save the files to. This can also include
+                    a prefix to the file. If directory="~/sim/", then plots are
+                    saved as "[number].png" in the ~/sim/ directory. If
+                    directory="~/sim", then plots are saved as
+                    "sim[number].png" in the home directory.
+        
+        should_continue
+                  - function that determines if a simulation should stop or
+                    not. This takes the simulation as an argument and returns a
+                    boolean. The simulation is run until should_continue
+                    returns false. By default, this is the lambda function
+                    sim => sim.t > 500
+        
+        integrator
+                  - function that timesteps the simulation. Should only take
+                    the simulation as an argument and return nothing, modifying
+                    the passed simulation. By default, this is the lambda
+                    function
+                    sim => sim.step("RK4")
+
+        plot_kwargs
+                  - The keyword arguments to be passed into
+                    matplotlib.pyplot.savefig() By default, this is an empty
+                    dictionary.
+
+        save_eta
+                  - Parameters for how eta should be saved when data is saved.
+                    This should be generated using
+                    Simulator1D.data_save_params(). If None, then eta is not
+                    saved.
+        
+        save_phi
+                  - Parameters for how phiS should be saved when data is saved.
+                    This should be generated using
+                    Simulator1D.data_save_params(). If None, then phiS is not
+                    saved.
+
+        loop_callback
+                  - this function is called after every simulation step. It
+                    should be a void function that takes the arguments
+                    sim, step, plot, data, where
+                    <sim> is the simulator at the step
+                    <step> is the integer multiple of dt that the simulation
+                    has run
+                    <plot> is a boolean representing if the plot was saved this
+                    step
+                    <data> is a boolean representing if the data was saved this
+                    step
+                    
+                    By default, loop_callback makes a print statement after
+                    every 100 time steps.
+        """
+        if loop_callback == None:
+            def cb(sim, step, plot, data):
+                if step % 100 == 0:
+                    print(f"Time: {round(sim.t,3)}")
+            loop_callback = cb
+        
+        step = 0
+
+        #how many steps per plot
+        plotstep = round(saveplot_dt/self.dt)
+        saveplot = plotstep > 0
+
+        #how many steps per data save
+        datastep = round(savedata_dt/self.dt)
+        savedata = datastep > 0
+        
+        #prep data and write metadata
+        meta = {
+            "start_time": self.t,
+            "dt": self.dt,
+            "dx": self.dx,
+            "g": self.g,
+            "h0": self.h0
+        }
+        d = {}
+        import json
+        if saveplot:
+            import matplotlib.pyplot as plt
+            meta["plot_dt"] = plotstep * self.dt
+        if savedata:
+            meta["savedata"] = {
+                "dt": datastep * self.dt,
+                "eta": save_eta,
+                "phiS": save_phi
+            }
+            if save_phi != None:
+                d["phiS"] = []
+            if save_eta != None:
+                d["eta"] = []
+        
+        while should_continue(self):
+            #record data
+            shouldplot = saveplot and (step % plotstep == 0)
+            shoulddata = savedata and (step % datastep == 0)
+            
+            if shouldplot:
+                plt.plot(self.x, self.eta, "b")
+                plt.plot(self.x, self.zeta - self.h0, "k")
+                plt.savefig(f"{directory}{step//plotstep}.png", **plot_kwargs)
+                plt.clf()
+
+            if shoulddata:
+                if save_eta != None:
+                    d["eta"].append(
+                        Simulator1D.vec_to_data(self.eta, self.dx, save_eta))
+                if save_phi != None:
+                    d["phiS"].append(
+                        Simulator1D.vec_to_data(self.phiS, self.dx, save_phi))
+                #save the file after every 10 data collections so we don't lose
+                #much data when we stop
+                if (step//datastep) % 10 == 0:
+                    meta["datapoints"] = len(d["eta"]) if "eta" in d \
+                            else (len(d["phiS"]) if "phiS" in d else 0)
+                    data = {"meta":meta, "data":d}
+                    with open(f"{directory}dat.json","w") as f:
+                        json.dump(data, f)
+            loop_callback(self, step, shouldplot, shoulddata)
+            #step forward
+            integrator(self)
+            step += 1
+        
+        meta["datapoints"] = len(d["eta"]) if "eta" in d \
+                else (len(d["phiS"]) if "phiS" in d else 0)
+        data = {"meta":meta, "data":d}
+        with open(f"{directory}dat.json","w") as f:
+            json.dump(data, f)
+
+        
+    @staticmethod
+    def vec_to_data(vec, dx, params):
+        """
+        Converts a vector into data, specified by params, which is in the
+        form generated by Simulator1D.data_save_params(). dx is the spatial
+        resolution of vec
+        """
+        eps = params["eps"]
+        z_trunc = params["zero_trunc"]
+        mod_eps = None
+        if eps > 0:
+            mod_eps = lambda x: \
+                    round((x if abs(x) > z_trunc else 0)/eps)*eps
+        else:
+            mod_eps = lambda x: \
+                    x if abs(x) > z_trunc else 0
+        step = 1
+        if params["dx"] != None:
+            step = max(round(params["dx"]/dx),1)
+
+
+        if params["point_conversion"] == True:
+            lin_tol = params["lin_tol"]
+            #to points: should return an array of points
+            pts = [ [0,mod_eps(vec[0])] ]
+            #always save first and last points, skip them in loop
+            for i in range(step, len(vec), step)[:-1]:
+                #check linearity: (i,y) fit in linear model of (i0,y0)->(i1,y1)
+                y = mod_eps(vec[i])
+                y0 = pts[-1][1]
+                i0 = pts[-1][0]/dx
+                i1 = i+step
+                y1 = mod_eps(vec[i1])
+                if abs(
+                    (y-y0) - (y1-y0)*(i - i0)/(i1 - i0)
+                ) > lin_tol:
+                    pts.append([i*dx, y])
+            pts.append([ (len(vec)-1)*dx, mod_eps(vec[-1]) ])
+            return pts
+        else:
+            pts = [
+                mod_eps(y) for y in (vec[::step])[:-1]
+            ]
+            pts.append(mod_eps(vec[-1]))
+            return pts
+
+
+    @staticmethod
+    def data_save_params(dx = None, point_conversion = False, eps = 0,
+            lin_tol = -1, zero_trunc = 0):
+        """
+        Returns a dictionary of parameters for how to save data from a
+        simulation. The output of data_save_params() should be used for
+        arguments save_eta and save_phi in run_simulation().
+
+        dx    
+              - The spatial resolution to save with. If None, then the
+                resolution is the same as the simulation. This value
+                will always be rounded to a whole number multiple of
+                the simulaton dx. [default: None]
+
+        point_conversion
+              - A boolean that represents if data should be coded as
+                a vector (array), or if the vector should be converted
+                into a list of (x,y) points. If true, then the conversion
+                is made. [default: False]
+
+        eps
+              - The tolerance of the save data. The data is rounded to the 
+                nearest multiple of eps. That is, with eps=0.001, the data
+                is saved up to the 3rd decimal place. 0 corresponds with
+                no rounding. [default: 0]
+        
+        lin_tol
+              - Only used when point_conversion is true. Specifies a tolerance
+                for which points should not be saved when they are close enough
+                to a linear interpolation of the data. If the points are 
+                {(0,0),(0.5,0.5),(1,1)}, any nonnegative tolerance will discard
+                (0.5,0.5). If no points should be discarded, a negative value
+                should be given. [default: -1]
+        
+        zero_trunc
+              - If a value is less than this distance from 0, the value is 
+                truncated to 0 before saving. [default: 0]
+        """
+        opt = {
+            'dx': dx, 'point_conversion':point_conversion,
+            'eps':eps, 'zero_trunc':zero_trunc
+        }
+        if point_conversion:
+            opt['lin_tol'] = lin_tol
+        return opt
+
     @staticmethod
     def soliton(x0,a0,h0,Nx,dx,g = 9.81):
         """
@@ -403,7 +678,8 @@ class Simulator1D():
         return bath
 
     @staticmethod
-    def KY_SIM(Nx=2**14, dx = 0.04, dt = 0.01, s0 = 1.0/500, x0=30, a0=0.1, h0=1):
+    def KY_SIM(Nx=2**14, dx = 0.04, dt = 0.01, s0 = 1.0/500,
+            x0=30, a0=0.1, h0=1):
         """
         Returns a new simulator similar to Knowles and Yeh's
         initial conditions.
