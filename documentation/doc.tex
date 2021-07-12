@@ -1,0 +1,506 @@
+\documentclass[10pt,a4paper]{article}
+\usepackage[utf8]{inputenc}
+\usepackage[english]{babel}
+\usepackage[english]{isodate}
+\usepackage[parfill]{parskip}
+\usepackage{amsmath}
+\usepackage{mathrsfs}
+
+
+\DeclareMathOperator*{\argmax}{arg\,max}
+\DeclareMathOperator*{\argmin}{arg\,min}
+
+\title{Euler Simulation, Python}
+\date{}
+
+
+\newenvironment{arglist}
+    {\begin{center}
+    \begin{tabular}{l|p{12cm}}
+    argument & description\\
+    \hline\\
+    }
+    { 
+    \end{tabular} 
+    \end{center}
+    }
+
+
+\newenvironment{optarglist}
+    {\begin{center}
+    \begin{tabular}{l|p{10cm}|l}
+    argument & description & default\\
+    \hline\\
+    }
+    { 
+    \end{tabular} 
+    \end{center}
+    }
+\begin{document}
+\maketitle
+
+\pagenumbering{roman}
+\tableofcontents
+\newpage
+
+
+\pagenumbering{arabic}
+\section{Introduction}
+
+The Euler Simulation project applies the methods used in Knowles and Yeh (2018) to simulate, in one dimension, the shoaling process of a shallow-water wave. The original paper uses such a simulation to predict the wave amplification process, that is, how $a$, the amplitude of the wave, relates to $h$, the local water depth.
+
+This project uses the same algorithm, in python, to handle other cases, e.g. the wind's effect on a shoaling solitary wave.
+\pagebreak
+
+
+\section{Code Documentation}
+
+Simulation involves two python files.
+
+\subsection{simulator.py}
+\textit{simulator.py} contains one relevant class: \texttt{Simulator1D}, which wraps necessary functionality to run a simulation.
+
+
+
+
+
+\subsubsection{\texttt{Simulator1D}: Constructor}
+\texttt{sim = Simulator1D(bathymetry, dt, dx, eta0, phiS0)}
+
+Initializes a Simulator instance with the given parameters:
+\begin{arglist}
+            bathymetry  &  numpy array of the bathymetry, must have an even
+                            number of nodes. 0 is expected to be water level.\\\hline
+            dt          &  time resolution of the simulation\\\hline
+            dx          &  spatial resolution of the simulation (distance
+                            between points of bathymetry)\\\hline
+            eta0        &  initial free surface heights (with spatial
+                            resolution dx, 0 is expected for still water)
+                            expected to be a numpy array\\\hline
+            phiS0       &  velocity potential at the free surface, expected
+                            to be a numpy array.
+\end{arglist}
+
+        \texttt{Simulator1D} has the following keyword arguments:
+
+\begin{optarglist}
+	 zeta\_x & First derivative (gradient) of the bathymetry, if a higher order approximation of
+		gradient is desired. If no argument for zeta\_x is passed, it is instead calculated from the finite difference
+$$f'(x) = \frac{f(x+h)-f(x-h)}{2h} + O(h^2)$$ where the edges are assumed to have a gradient of 0& (see description)\\\hline
+            M    & Terms in the pertubation expansion (higher number is more
+                    accurate, but requires more computation)& 5\\\hline
+            v    & lowpass threshold. If v is a number, any wavenumber greater
+                    than the largest wavenumber times v is clipped off each
+                    timestep. v can also be a function that takes a wavenumber magnitude
+                    and the peak wavenumber, and returns how it should be scaled
+                    & 0.7\\\hline
+            g    & acceleration due to gravity. & 9.81\\\hline
+            h0   & base still water depth &bathymetry[0]
+\end{optarglist}
+\pagebreak
+
+In the case that $v$ is a function, the wave number is the first argument and the peak wavenumber is the second argument, so the following will result in the same low-pass filter $v=0.7$:
+
+\begin{verbatim}
+def v(k, peak):
+    if k/peak <= 0.7:
+        return 1
+    else:
+        return 0
+\end{verbatim}
+
+
+
+
+
+\subsubsection{\texttt{Simulator1D}: step()}
+\texttt{sim.step("RK4")}
+
+Steps the simulation forward using the given method. Any arguments
+        for the method can be specified as optional arguments or keyword
+        arguments.
+\begin{arglist}
+method &
+              The method to use. This can be a string or a function. When
+                a string is passed the method in integrator.py of the same
+                name is used. See section (2.2) for such methods.
+\end{arglist}
+
+Optional arguments specific to a method (e.g. tolerance for implicit methods) can be passed into \texttt{step()}, which will be transferred to the method when called. In particular, \texttt{P\_atmos} is common to all integration methods, and is shown below.
+
+\begin{optarglist}
+P\_atmos & Atmospheric pressure at the surface. This can be either a function with arguments \texttt{eta,phiS,eta\_x,phiS\_x,w} or a numpy array of length \texttt{Nx}. See the beginning of section (2.2) for more specifics on the function. & array of zeros
+\end{optarglist}
+
+
+
+
+
+\subsubsection{\texttt{Simulator1D}: calculate\_time\_derivatives()}
+\texttt{sim.calculate\_time\_derivatives(eta, phiS, zeta, zeta\_x, zeta\_t, P\_a)}
+
+Returns the tuple \texttt{(eta\_t, phiS\_t)} of time derivatives of $\eta$ and $\Phi^S$ respectively. Takes the following arguments:
+
+\begin{arglist}
+eta      & free surface height at the given time step; pass
+                    simulator.eta if you want the current time derivative.\\\hline
+        phiS     & free surface velocity potential at the given time step;
+                    pass simulator.phiS if you want the current time derivative\\\hline
+        zeta     & bathymetry ($\zeta$), with 0 corresponding with a depth of -h0\\\hline
+        zeta\_x   & spatial derivative of $\zeta$\\\hline
+        zeta\_t   & time derivative of $\zeta$\\\hline
+        P\_a      & atmospheric pressure at every point, should have the
+                    same samples as bathymetry. Expected to be a numpy
+                    array or a function. See the beginning of section (2.2) for more specifics on the function.
+\end{arglist}
+
+
+
+
+\subsubsection{\texttt{Simulator1D}: volume()}
+\texttt{sim.volume()}
+
+Returns the integral
+$$\int \eta~dt$$
+over the bounds of the simulation, which represents the volume of water in the simulation, offset by a constant that depends only on the bathymetry. This value should be invariant in the simulation, and can give a means of measuring the accuracy of the simulation.
+
+
+
+
+\subsubsection{\texttt{Simulator1D}: peak\_location()}
+\texttt{sim.peak\_location()}
+
+Returns $$\argmax_{x} \eta(x),$$ the value of $x$ that corresponds with the heighest point of the surface. This value is equivalent to the index of the highest eta, times \texttt{dx}, and provides a means of finding the approximate position of a solitary wave.
+
+
+
+\subsubsection{\texttt{Simulator1D}: zeta\_at()}
+\texttt{sim.zeta\_at(x)}
+
+Returns $\zeta(x)$, using a linear interpolation scheme for non-discrete points. calling \texttt{zeta\_at(i*dx)} is equivalent to evaluating $\texttt{zeta[i]}$.
+
+
+
+
+\subsubsection{\texttt{Simulator1D}: run\_simulation()}
+\texttt{sim.run\_simulation(plot\_dt, data\_dt, directory)}
+
+Runs a simulation, time-stepping until a stop-condition is met, and saving plots and/or data at given intervals of time.
+\begin{arglist}
+saveplot\_dt & the timestep between saved plots. This number is rounded
+                    to the nearest multiple of the simulation dt. If this
+                    value does not round to a positive number, plots are not
+                    saved. Plots are saved as PNG files with a name
+                    corresponding to the order it is saved in. A plot with
+                    number 'i' represents the data at time 'i*saveplot\_dt'\\\hline
+
+savedata\_dt &
+                   the timestep between saved data. This number is rounded
+                    to the nearest multiple of the simulation dt. If this
+                    value does not round to a positive number, data is not
+                    saved. Data is saved as a json file with name 'dat.json'
+                    which is created regardless if data should be saved or not.
+                    In the case that data is not saved, only the metadata of
+                    the simulation is stored.\\\hline
+        
+        directory &
+                   the directory to save the files to. This can also include
+                    a prefix to the file. If \texttt{directory="$\sim$/sim/"}, then plots are
+                    saved as ``[number].png" in the $\sim$/sim/ directory. If
+                    \texttt{directory="$\sim$/sim"}, then plots are saved as
+                    ``sim[number].png" in the home directory. If \texttt{directory=None}, no files
+                    are saved.\\\hline
+\end{arglist}
+
+\texttt{run\_simulation} has the following optional arguments:
+
+\begin{optarglist}
+should\_continue &
+                   function that determines if a simulation should stop or
+                    not. This takes the simulation as an argument and returns a
+                    boolean. The simulation is run until should\_continue
+                    returns false. By default, this is the lambda function
+                    \texttt{sim: sim.t > 500}, which stops the simulation when a time of 500 is reached & (see description)\\\hline
+integrator &
+function or string that timesteps the simulation.
+                    functions should only take the simulation as an argument
+                    and return nothing, modifying the passed simulation.
+                    Strings should be the name of a method in Integrator1D,
+                    which will be called by the simulation. &
+                    ``RK4"\\\hline
+plot\_kwargs &
+The keyword arguments to be passed into
+                    \texttt{matplotlib.pyplot.savefig()} & \{\} \\\hline
+
+save\_eta &
+                   Parameters for how eta should be saved when data is saved.
+                    This should be generated using
+                    Simulator1D.data\_save\_params(). If None, then eta is not
+                    saved. & None\\\hline
+        
+        save\_phi &
+                   Parameters for how phiS should be saved when data is saved.
+                    This should be generated using
+                    Simulator1D.data\_save\_params(). If None, then phiS is not
+                    saved. & None\\\hline
+
+        loop\_callback &
+                   this function is called after every simulation step. It
+                    should be a void function that takes the arguments
+                    \texttt{sim, step, plot, data}, where
+
+                    \texttt{sim} is the simulator at the step
+
+                    \texttt{step} is the integer multiple of dt that the simulation
+                    has run
+
+                    \texttt{plot} is a boolean representing if the plot was saved this
+                    step
+
+                    \texttt{data} is a boolean representing if the data was saved this
+                    step
+                    
+                    By default, loop\_callback makes a print statement after
+                    every 100 time steps. & (see description)\\\hline
+\end{optarglist}
+
+
+
+
+
+
+\subsubsection{\texttt{Simulator1D}: data\_save\_params()}
+\texttt{Simulator1D.data\_save\_params()}
+
+Returns a dictionary of parameters for how to save data from a simulation. The output of \texttt{data\_save\_params()} should be used for aguments \texttt{save\_eta} and \texttt{save\_phi} in \texttt{run\_simulation()}.
+
+\begin{optarglist}
+        dx    
+              & The spatial resolution to save with. If None, then the
+                resolution is the same as the simulation. This value
+                will always be rounded to a whole number multiple of
+                the simulaton dx. & None \\\hline
+
+        point\_conversion
+              & A boolean that represents if data should be coded as
+                a vector (array), or if the vector should be converted
+                into a list of (x,y) points. If true, then the conversion
+                is made. & False \\\hline
+
+        eps
+              & The tolerance of the save data. The data is rounded to the 
+                nearest multiple of eps. That is, with eps=0.001, the data
+                is saved up to the 3rd decimal place. 0 corresponds with
+                no rounding. & 0\\\hline
+        
+        lin\_tol
+             & Only used when point\_conversion is true. Specifies a tolerance
+                for which points should not be saved when they are close enough
+                to a linear interpolation of the data. If the points are 
+                \{(0,0),(0.5,0.5),(1,1)\}, any nonnegative tolerance will discard
+                (0.5,0.5). If no points should be discarded, a negative value
+                should be given. & -1\\\hline
+        
+        zero\_trunc
+              & If a value is less than this distance from 0, the value is 
+                truncated to 0 before saving.& 0
+\end{optarglist}
+
+
+
+
+\subsubsection{\texttt{Simulator1D}: soliton()}
+\texttt{Simulator1D.soliton(x0,a0,h0,Nx,dx)}
+
+Returns a tuple \texttt{(eta,phiS)} corresponding to the intial conditions of $\eta$ and $\Phi^S$ of a soliton at a given point in space.
+
+\begin{arglist}
+        x0   & The x coordinate of the soliton, where
+                x=0 corresponds with an index of 0 in the vectorization
+                of $\eta$ and $\Phi^S$\\\hline
+        a0   & The amplitude of the soliton\\\hline
+        h0   & The water deph beneath the soliton\\\hline
+        Nx   & The number of points in the vectorization of $\eta$ and $\Phi^S$\\\hline
+        dx   & The spatial resolution (distance between points)\\\hline
+\end{arglist}
+
+\begin{optarglist}
+g & acceleration due to gravity & 9.81\\
+\end{optarglist}
+
+This can be used in the constructor of \texttt{Simulator1D} through unpacking:
+
+\texttt{sim = Simulator1D(bathymetry, dt, dx, *Simulator1D.soliton(x0,a0,h0,Nx,dx))}
+
+
+
+
+
+\subsubsection{\texttt{Simulator1D}: KY\_bathym()}
+\texttt{Simulator1D.KY\_bathym()}
+
+Produces a bathymetry profile similar to Knowles and Yeh's paper.
+        Expects h0 = 1, but the result can be multiplied by the desired h0 if not 1.
+
+\begin{optarglist}
+
+        Nx    & number of points & $2^{14}$\\\hline
+        dx    & spatial resolution (distance between each point) & 0.04\\\hline
+        s0    &  nominal slope of the bathymetry & 0.002 \\\hline
+        d0    & height of the beach plateau & 0.9 \\\hline
+        gamma & smoothing parameter & 0.1 \\\hline
+        X1    & position where the bathymetry should start sloping up & 4\\\hline
+\end{optarglist}
+
+
+
+
+
+
+\subsubsection{\texttt{Simulator1D}: KY\_sim()}
+\texttt{sim = Simulator1D.KY\_sim()}
+
+Returns a new simulator similar to Knowles and Yeh's
+        initial conditions. The bathymetry is produced by \texttt{KY\_bathym()} and the initial $\eta$ and $\Phi^S$ values are produced by \texttt{soliton()}.
+
+\begin{optarglist}
+        Nx       & Number of points (nodes) in the discreteized simulation & $2^{14}$\\\hline
+        dx        & Spatial resolution & 0.04 \\\hline
+        dt        & Temporal resolution (time step) & 0.01 \\\hline
+        s0        & Slope of the bathymetry & 1/500 \\\hline
+        x0        & location of the center of the starting soliton & 30 \\\hline
+        a0        & amplitude of the soliton & 0.1 \\\hline 
+        h0        & depth of the water & 1 \\\hline
+\end{optarglist}
+
+
+
+
+\subsubsection{\texttt{Simulator1D}: fields}
+In an instance of Simulator1D, the following fields may be of importance:
+
+\begin{arglist}
+dt & Temporal resolution (time step) of the simulation. This variable is used by an integrator when stepping the simulation. Most methods will use this time step, but an adaptive method may use a timestep that is smaller. This can be modified externally.\\\hline
+
+dx & Spatial resolution. This is the distance between two points of a vectorized function of $x$. This should not be modified externally.\\\hline
+
+eta & Vectorized $\eta$ with a spatial resolution \texttt{dx} at the current time step. This can be modified externally, but must have the same length (Nx).\\\hline
+
+phiS & Vectorized $\Phi^S$ with a spatial resolution \texttt{dx} at the current time step. This can be modified externally, but must have the same length (Nx). \\\hline
+
+M & Terms in the pertubation expansion of $\Phi$. Calculating the vertical velocity $\Phi_x$ scales approximately $O(M^2)$. This can be modified externally.\\\hline
+
+g & The acceleration due to gravity in this simulation. This can be modified externally.\\\hline
+
+h0 & base still water depth. We approximate the bathymetry as h0 in many calculations. This can be modified externally.\\\hline
+
+zeta & Vectorized bathymetry ($\zeta$), offset so $\zeta = 0$ corresponds with $z = -$h0. This can be modified externally, but must have the same length (Nx). Additionally, zeta\_x should also be changed to the gradient of the new bathymetry.\\\hline
+
+zeta\_x & Vectorized bathymetry gradient ($\nabla\zeta$). This can be modified externally, but must have the same length (Nx). Additionally, zeta should also be changed to match the new bathymetry.\\\hline
+
+Nx & Number of points used in the discretization (vectorization) of the simulation along the $x$-axis. This should not be modified.\\\hline
+
+sim\_length & distance in $x$ that the simulation uses. The vectorizations of $\eta,\Phi^S,$ and $\zeta$ have the domain $[0,$ sim\_length$)$. This should not be modified.\\\hline
+
+x & Vectorized domain. It holds that \texttt{x[i] = dx*i}. This should not be modified.\\\hline
+
+kxdb & The double-domain of wave number. When performing an FFT on a function $f$ with spacing $dx$, the values of the output correspond to the wavenumber by index. If $V$ is such a vectorization of the function $f$, then $$\big(\mathcal F(f)\big)(\text{\texttt{kxdb[i]}}) \approx \text{\texttt{FFT}}(V)\text{\texttt{[i]}}$$
+where $\mathcal F$ is the continuous fourier transform. This should not be modified.\\\hline
+
+kappadb & Normalized wavenumber of kxdb. This is equivalent to \texttt{abs(kxdb)}. This should not be modified\\\hline
+
+chi & Vectorized low-pass filter. Any function in the wavenumber domain can apply the filter by pointwise multiplication. This can be modified externally, but kxdb\_im must also be modified accordingly.\\\hline
+
+kxdb\_im & The precomputed value $ik \chi(k)$, which is computed from \texttt{complex(0,1) * kxdb * chi}. This should only be modified when chi is modified.\\\hline
+
+t & The time the simulation has run. This is only ever incremented by an integration method inside a \texttt{step()} call, and can be freely modified and accessed externally.
+
+\end{arglist}
+
+
+\subsection{integrator.py}
+This python file has the class \texttt{Integrator1D} which contains only static members. Each of which is a function that takes a \texttt{Simulator1D} instance, an atmospheric pressure argument \texttt{P\_atmos}, and potential optional arguments.
+
+\texttt{P\_atmos} can either be a numpy array or a function that takes in the arguments \texttt{eta,phiS,eta\_x,phiS\_x,w} and returns a numpy array. The array should have a length equal to the number of nodes \texttt{Nx} used in the simulator, which matches the length of the \texttt{bathymetry} array passed into the constructor. For example, when measuring the wind effect, one may consider
+$$P_a = P\frac{d\eta}{dx}$$
+for some constant $P$. Such a function can be expressed as
+\begin{verbatim}
+def P_atmos(eta,phiS,eta_x,phiS_x,w):
+    return P * eta_x
+\end{verbatim}
+
+
+\subsubsection{\texttt{Integrator1D}: euler}
+Referenced by string \texttt{"euler"}. Makes one derivative calculation per step, using the method:
+$$y_{n+1} =  y_{n} + hf'(y_{n})$$
+
+
+
+
+\subsubsection{\texttt{Integrator1D}: RK4}
+Referenced by string \texttt{"RK4"}. Makes 4 derivative calculation per step, using the classic 4 step, 4th order, Runge-Kutta method with the Butcher tableau:
+\[\arraycolsep=6pt\def\arraystretch{1.2}\begin{array}{c|cccc}
+0 & 0 & 0 & 0 & 0\\
+\frac12 & \frac12 & 0 & 0 & 0\\
+\frac12 & 0 & \frac12 & 0 & 0\\
+1 & 0 & 0 & 1 & 0\\
+\hline
+&\frac16 & \frac13 & \frac13 & \frac16
+\end{array}
+\]
+
+
+
+\subsubsection{\texttt{Integrator1D}: implicit\_midpoint}
+Referenced by string \texttt{"implicit\_midpoint"}. Uses the implicit midpoint rule:
+$$y_{n+1} = y_n + hf\left(\frac{y_n + y_{n+1}}{2}\right)$$
+This equation is solved using fixed point iteration after an initial guess from euler's method.
+
+Takes additional arguments:
+
+\begin{optarglist}
+max\_iters & The most iterations used to achieve the desired tolerance, after which, RK4 is defaulted to. & 100\\\hline
+tol & The tolerance allowed for the iteration to stop. & $10^{-10}$
+\end{optarglist}
+
+
+
+
+\subsubsection{\texttt{Integrator1D}: AM1}
+Referenced by string \texttt{"AM1"}. Uses the one step Adams-Moulton method, the implicit trapezoidal rule:
+$$y_{n+1} = y_n + h\frac{f(y_n) + f(y_{n+1})}{2}$$
+This equation is solved using fixed point iteration after an initial guess from euler's method.
+
+Takes additional arguments:
+
+\begin{optarglist}
+max\_iters & The most iterations used to achieve the desired tolerance, after which, RK4 is defaulted to. & 100\\\hline
+tol & The tolerance allowed for the iteration to stop. & $10^{-10}$
+\end{optarglist}
+
+
+
+
+\subsubsection{\texttt{Integrator1D}: DIRK3}
+Referenced by string \texttt{"DIRK3"}. Uses Nørsett's 3 stage, 4th order diagonally implicit Runge-Kutta method withe the Butcher tableau:
+\[\arraycolsep=6pt\def\arraystretch{1.8}\begin{array}{c|ccc}
+x & x & 0 & 0\\
+\frac12 & \frac12-x & x & 0\\
+1-x & 2x & 1 - 4x & x\\
+\hline
+&\frac{1}{6(1-2x)^2} & \frac{3(1-2x)^2-1}{3(1-2x)^2} & \frac1{6(1-2x)^2}
+\end{array}
+\]
+where $x = 1.06858$.
+This equation is solved using fixed point iteration for each stage, where each stage has an initial guess of the former stage, with the first stage's initial guess as the derivative at $y_n$. For example, if $k_1$ and $k_2$ are the results of the first and second stage respectively, the second stage solves
+$$k_2 = f\left(y_{n} + \left(\frac{1}{2}-x\right)hk_1 + xhk_2\right)$$
+with an initial guess $k_2 = k_1$.
+
+Takes additional arguments:
+
+\begin{optarglist}
+max\_iters & The most iterations used to achieve the desired tolerance, after which, RK4 is defaulted to. & 100\\\hline
+tol & The tolerance allowed for the iteration to stop. & $10^{-10}$
+\end{optarglist}
+
+\end{document}

@@ -193,7 +193,7 @@ class Integrator1D():
     
     @staticmethod
     def implicit_midpoint(sim, P_atmos = None, max_iters = 100,
-            tol = 10**-13):
+            tol = 10**-10):
         """
         Steps the simulation by one using an implicit midpoint method.
         ( y_{n+1} = y_n + h*f((y_n + y_{n+1})/2) )

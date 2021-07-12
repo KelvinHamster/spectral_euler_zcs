@@ -41,7 +41,7 @@ class Simulator1D():
         self.dt = dt; self.dx = dx
         self.eta = eta0; self.phiS = phiS0
         
-        self.M = M; self.v = v; self.g = g
+        self.M = M; self.g = g
         if h0 == None:
             self.h0 = -bathymetry[0]
         else:
@@ -156,7 +156,6 @@ class Simulator1D():
                     same samples as bathymetry. Expected to be a numpy
                     array or a function of
                     (eta,phiS,eta_x,phiS_x,w) that returns a numpy array.
-                    [default: constant 0]
         """
         #gradients:
         eta_x = self.calculate_gradient(eta)
@@ -352,7 +351,7 @@ class Simulator1D():
 
     def run_simulation(self, saveplot_dt, savedata_dt, directory,
             should_continue = lambda sim: sim.t > 500,
-            integrator = lambda sim: sim.step("RK4"),
+            integrator = "RK4",
             plot_kwargs = {},
             save_eta = None,
             save_phi = None,
@@ -383,7 +382,8 @@ class Simulator1D():
                     a prefix to the file. If directory="~/sim/", then plots are
                     saved as "[number].png" in the ~/sim/ directory. If
                     directory="~/sim", then plots are saved as
-                    "sim[number].png" in the home directory.
+                    "sim[number].png" in the home directory. If none, no files
+                    are saved.
         
         should_continue
                   - function that determines if a simulation should stop or
@@ -393,11 +393,12 @@ class Simulator1D():
                     sim => sim.t > 500
         
         integrator
-                  - function that timesteps the simulation. Should only take
-                    the simulation as an argument and return nothing, modifying
-                    the passed simulation. By default, this is the lambda
-                    function
-                    sim => sim.step("RK4")
+                  - function or string that timesteps the simulation.
+                    functions should only take the simulation as an argument
+                    and return nothing, modifying the passed simulation.
+                    Strings should be the name of a method in Integrator1D,
+                    which will be called by the simulation.
+                    By default, this value is "RK4"
 
         plot_kwargs
                   - The keyword arguments to be passed into
@@ -431,6 +432,9 @@ class Simulator1D():
                     By default, loop_callback makes a print statement after
                     every 100 time steps.
         """
+        if not callable(integrator):
+            integrator = lambda sim: sim.step(integrator)
+
         if loop_callback == None:
             def cb(sim, step, plot, data):
                 if step % 100 == 0:
@@ -476,7 +480,7 @@ class Simulator1D():
             shouldplot = saveplot and (step % plotstep == 0)
             shoulddata = savedata and (step % datastep == 0)
             
-            if shouldplot:
+            if shouldplot and directory != None:
                 plt.plot(self.x, self.eta, "b")
                 plt.plot(self.x, self.zeta - self.h0, "k")
                 plt.savefig(f"{directory}{step//plotstep}.png", **plot_kwargs)
@@ -491,10 +495,11 @@ class Simulator1D():
                         Simulator1D.vec_to_data(self.phiS, self.dx, save_phi))
                 #save the file after every 10 data collections so we don't lose
                 #much data when we stop
-                if (step//datastep) % 10 == 0:
+                if (step//datastep) % 10 == 0 and directory != None:
                     meta["datapoints"] = len(d["eta"]) if "eta" in d \
                             else (len(d["phiS"]) if "phiS" in d else 0)
                     data = {"meta":meta, "data":d}
+                    
                     with open(f"{directory}dat.json","w") as f:
                         json.dump(data, f)
             loop_callback(self, step, shouldplot, shoulddata)
@@ -505,8 +510,10 @@ class Simulator1D():
         meta["datapoints"] = len(d["eta"]) if "eta" in d \
                 else (len(d["phiS"]) if "phiS" in d else 0)
         data = {"meta":meta, "data":d}
-        with open(f"{directory}dat.json","w") as f:
-            json.dump(data, f)
+        
+        if directory != None:
+            with open(f"{directory}dat.json","w") as f:
+                json.dump(data, f)
 
         
     @staticmethod
@@ -686,6 +693,7 @@ class Simulator1D():
 
         Nx        - Number of points (nodes) in the discreteized simulation
         dx        - Spatial resolution
+        dt        - time step
         s0        - Slope of the bathymetry
         x0        - location of the center of the starting soliton
         a0        - amplitude of the soliton
