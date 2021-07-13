@@ -220,7 +220,7 @@ should\_continue &
                     not. This takes the simulation as an argument and returns a
                     boolean. The simulation is run until should\_continue
                     returns false. By default, this is the lambda function
-                    \texttt{sim: sim.t > 500}, which stops the simulation when a time of 500 is reached & (see description)\\\hline
+                    \texttt{sim: sim.t < 500}, which stops the simulation when a time of 500 is reached & (see description)\\\hline
 integrator &
 function or string that timesteps the simulation.
                     functions should only take the simulation as an argument
