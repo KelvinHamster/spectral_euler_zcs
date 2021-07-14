@@ -1,3 +1,4 @@
+from __future__ import division
 import math
 import numpy as np
 from euler_model.integrator import Integrator1D

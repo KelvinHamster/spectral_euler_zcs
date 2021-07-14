@@ -113,7 +113,7 @@ def sim_KY(Nx = 2**14, a0 = 0.1, h0 = 1.0, X0 = -280, d0 = 0.9, s0 = 1.0/500,
             plt.pause(0.05)
         else:
             if step % 100 == 0:
-                print("Time: "+sim.time)
+                print("Time: "+str(sim.t))
     
     def continue_test(s):
         if abs(s.volume() - base_mass) > mass_err_crit:
