@@ -324,6 +324,18 @@ class Simulator1D():
         """
         return np.trapz(self.eta, dx=self.dx)
 
+    def energy(self):
+        """
+        Calculates the energy in the wave at this time step.
+        """
+        eta_t,_ = self.calculate_time_derivatives(
+            self.eta, self.phiS, self.zeta, self.zeta_x,
+            np.zeros(self.Nx), np.zeros(self.Nx)
+        )
+        KE = self.phiS * eta_t
+        PE = self.g * (self.eta**2)
+
+        return np.trapz(KE + PE, dx=self.dx)
 
     def peak_location(self):
         """
@@ -352,10 +364,10 @@ class Simulator1D():
     def run_simulation(self, saveplot_dt, savedata_dt, directory,
             should_continue = lambda sim: sim.t > 500,
             integrator = "RK4",
-            plot_kwargs = {},
             save_eta = None,
             save_phi = None,
-            loop_callback = None):
+            loop_callback = None,
+            plot_func = None):
         """
         Automatically integrates eta and phiS over a set of timesteps,
         saving plots and/or data at given intervals in time.
@@ -400,11 +412,6 @@ class Simulator1D():
                     which will be called by the simulation.
                     By default, this value is "RK4"
 
-        plot_kwargs
-                  - The keyword arguments to be passed into
-                    matplotlib.pyplot.savefig() By default, this is an empty
-                    dictionary.
-
         save_eta
                   - Parameters for how eta should be saved when data is saved.
                     This should be generated using
@@ -431,6 +438,10 @@ class Simulator1D():
                     
                     By default, loop_callback makes a print statement after
                     every 100 time steps.
+        plot_func
+                  - A function that is dedicated to plotting and saving the
+                    figure. The function is expected to be void and take the
+                    arguments (sim, filename).
         """
         if not callable(integrator):
             method = integrator
@@ -441,6 +452,19 @@ class Simulator1D():
                 if step % 100 == 0:
                     print(f"Time: {round(sim.t,3)}")
             loop_callback = cb
+
+        
+        if plot_func == None:
+            import matplotlib.pyplot as plt
+            def do_plot(sim, filename):
+                plt.plot(sim.x, sim.eta, "b")
+                plt.plot(sim.x, sim.zeta - sim.h0, "k")
+                plt.ylabel("z")
+                plt.xlabel("x")
+                plt.title(f"dx={sim.dx},dt={sim.dt},t={round(sim.t,3)}")
+                plt.savefig(filename)
+                plt.clf()
+            plot_func = do_plot
         
         step = 0
 
@@ -463,7 +487,6 @@ class Simulator1D():
         d = {}
         import json
         if saveplot:
-            import matplotlib.pyplot as plt
             meta["plot_dt"] = plotstep * self.dt
         if savedata:
             meta["savedata"] = {
@@ -482,11 +505,7 @@ class Simulator1D():
             shoulddata = savedata and (step % datastep == 0)
             
             if shouldplot and directory != None:
-                plt.plot(self.x, self.eta, "b")
-                plt.plot(self.x, self.zeta - self.h0, "k")
-                plt.savefig(f"{directory}{step//plotstep}.png", **plot_kwargs)
-                plt.clf()
-
+                plot_func(self, f"{directory}{step//plotstep}.png")
             if shoulddata:
                 if save_eta != None:
                     d["eta"].append(

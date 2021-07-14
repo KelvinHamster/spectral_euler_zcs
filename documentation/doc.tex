@@ -167,6 +167,15 @@ over the bounds of the simulation, which represents the volume of water in the s
 
 
 
+\subsubsection{\texttt{Simulator1D}: energy()}
+\texttt{sim.energy()}
+
+Calculates the total energy in the system using the formula
+$$\int \eta_t\Phi^S + g\eta^2~dt$$
+This value should be invariant in the simulation, and can give a means of measuring the accuracy of the simulation.
+
+
+
 \subsubsection{\texttt{Simulator1D}: peak\_location()}
 \texttt{sim.peak\_location()}
 
@@ -227,10 +236,7 @@ function or string that timesteps the simulation.
                     and return nothing, modifying the passed simulation.
                     Strings should be the name of a method in Integrator1D,
                     which will be called by the simulation. &
-                    ``RK4"\\\hline
-plot\_kwargs &
-The keyword arguments to be passed into
-                    \texttt{matplotlib.pyplot.savefig()} & \{\} \\\hline
+                    ``RK4" \\\hline
 
 save\_eta &
                    Parameters for how eta should be saved when data is saved.
@@ -262,10 +268,26 @@ save\_eta &
                     
                     By default, loop\_callback makes a print statement after
                     every 100 time steps. & (see description)\\\hline
+        plot\_func &
+                   A function that is dedicated to plotting and saving the
+                    figure. The function is expected to be void and take the
+                    arguments (sim, filename). & (see below)
 \end{optarglist}
 
+By default, plot\_func is defined as the function
 
+\begin{verbatim}
+def plot_func(sim, filename):
+    plt.plot(sim.x, sim.eta, "b")
+    plt.plot(sim.x, sim.zeta - sim.h0, "k")
+    plt.ylabel("z")
+    plt.xlabel("x")
+    plt.title(f"dx={sim.dx},dt={sim.dt},t={round(sim.t,3)}")
+    plt.savefig(filename)
+    plt.clf()
+\end{verbatim}
 
+where \texttt{plt} is \texttt{matplotlib.pyplot}.
 
 
 
@@ -502,5 +524,83 @@ Takes additional arguments:
 max\_iters & The most iterations used to achieve the desired tolerance, after which, RK4 is defaulted to. & 100\\\hline
 tol & The tolerance allowed for the iteration to stop. & $10^{-10}$
 \end{optarglist}
+
+
+
+
+
+\pagebreak
+
+\section{Examples}
+
+\subsection{\texttt{KY.py}}
+
+This file defines one function, \texttt{sim\_KY}, which runs a simulation very similar to that of the Knowles and Yeh (2018) simulation.
+Run using \texttt{python KY.py}. When run in this manner, \texttt{sim\_KY} is called with the default arguments. When imported in python using \texttt{import KY}, the function is not called, but can freely be called by the user. \texttt{sim\_KY} has the following optional arguments:
+
+\begin{optarglist}
+    Nx &
+           number of points (nodes) in the simulation.& $2^{14}$ \\\hline
+    
+    a0  &    
+           amplitude of the soliton initial condition & 0.1\\\hline
+
+    h0      &  
+           base water depth. (depth at zeta = 0)& 1.0\\\hline
+
+    X0    &   
+           position (not vector index) of the soliton relative to the center
+            of the simulation space. Negative values correspond to the left
+            half of the simulation space.& -280 \\\hline
+
+    d0         &  
+           height of the beach plateau (on the right side)& 0.9\\\hline
+
+    s0      &     
+           nominal slope of the bathymetry.&$\frac{1}{500}$ \\\hline
+
+    dx     &   
+           spatial resolution (distance between points/nodes in simulation
+            space)& 0.04\\\hline
+    
+    dt    &  
+           Time step of the simulation& 0.01\\\hline
+    
+    Xt   &    
+           Distance from the soliton wave crest to the beach toe. Positive
+            values mean that the beach toe is in front of the wave& 50\\\hline
+
+    mass\_err\_crit &
+           Largest deviation in mass (calculated from \texttt{volume()}) allowed before the
+            simulation is terminated& 0.5\\\hline
+            
+    energy\_err\_crit&
+           Largest deviation in energy (calculated from \texttt{energy()}) allowed before the
+            simulation is terminated& 0.5 \\\hline
+    
+    tmax      &   
+           Largest time in simulation allowed before termination.&500 \\\hline
+
+    v         & 
+           The low-pass filter. Takes a number to cut off all wavenumbers
+            greater than v*max(k), or takes a function that maps k and max(k)
+            to how much the corresponding amplitude should be scaled. See
+            the constructor of Simulator1D.& 0.7 \\\hline
+    
+    M           &
+           The number of terms in the pertubation expansion to simulate& 5\\\hline
+
+    g              &
+           Acceleration due to gravity&9.81 \\\hline
+
+    tsave    & 
+           time in between plot saves. Zero or negative corresponds to no
+            saving. This value is rounded to a multiple of dt.& 1\\\hline
+    
+    save\_dir     &  
+           the directory/file prefix for the saved plots. By default, this is ``./KY\_dx[dx]\_dt[dt]\_s[s0]\_a[a0]\_plot", where each
+bracketed value is replaced by the relevant quantity. & (see description)\\\hline
+\end{optarglist}
+
 
 \end{document}
