@@ -12,7 +12,7 @@ from matplotlib.animation import FuncAnimation
 
 from euler_model.simulator import Simulator1D
 
-def sim_KY(Nx = 2**14, a0 = 0.1, h0 = 1.0, X0 = -280, d0 = 0.9, s0 = 1/500,
+def sim_KY(Nx = 2**14, a0 = 0.1, h0 = 1.0, X0 = -280, d0 = 0.9, s0 = 1.0/500,
         dx = 0.04, dt = 0.01, Xt = 50, mass_err_crit = 0.5,
         energy_err_crit = 0.5, tmax = 500, v=0.7, M = 5, g = 9.81,
         tsave = 1, save_dir = None):
