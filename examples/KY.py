@@ -7,15 +7,12 @@ Simulates Knowles and Yeh (2018)
 import sys
 sys.path.append("../")
 
-import matplotlib.pyplot as plt
-from matplotlib.animation import FuncAnimation
-
 from euler_model.simulator import Simulator1D
 
 def sim_KY(Nx = 2**14, a0 = 0.1, h0 = 1.0, X0 = -280, d0 = 0.9, s0 = 1.0/500,
         dx = 0.04, dt = 0.01, Xt = 50, mass_err_crit = 0.5,
         energy_err_crit = 0.5, tmax = 500, v=0.7, M = 5, g = 9.81,
-        tsave = 1, save_dir = None):
+        tsave = 1, save_dir = None, gui = True):
     """
     Creates a simulation similar to Knowles and Yeh's conditions. Takes
     the following optional arguments:
@@ -81,7 +78,8 @@ def sim_KY(Nx = 2**14, a0 = 0.1, h0 = 1.0, X0 = -280, d0 = 0.9, s0 = 1.0/500,
     save_dir        [default: "./KY_dx[dx]_dt[dt]_s[s0]_a[a0]_plot"]
           - the directory/file prefix for the saved plots.
     """
-    
+    if gui:
+        import matplotlib.pyplot as plt
     #initial conditions:
 
     #in KY, x=0 is the middle, change it to the left
@@ -98,40 +96,57 @@ def sim_KY(Nx = 2**14, a0 = 0.1, h0 = 1.0, X0 = -280, d0 = 0.9, s0 = 1.0/500,
         save_dir = "./KY_dx"+str(dx)+"_dt"+str(dt)+"_s" \
             +str(s0)+"_a"+str(a0)+"_plot"
 
-    
-    fig = plt.figure()
-    ax = fig.add_subplot(1,1,1)
+    if gui:
+        fig = plt.figure()
+        ax = fig.add_subplot(1,1,1)
 
     def on_loop(sim, step, plot, data):
-        ax.clear()
-        ax.plot(sim.x, sim.eta, "b")
-        ax.plot(sim.x, sim.zeta - sim.h0, "k")
-        ax.set_ylabel("z")
-        ax.set_xlabel("x")
-        #ax.set_title(f"dx={sim.dx},dt={sim.dt},t={round(sim.t,3)}")
-        ax.set_title("dx="+str(sim.dx)+",dt="+str(sim.dt)+ \
-            ",t="+str(round(sim.t,3)))
-        plt.pause(0.05)
-        pass
+        if gui:
+            ax.clear()
+            ax.plot(sim.x, sim.eta, "b")
+            ax.plot(sim.x, sim.zeta - sim.h0, "k")
+            ax.set_ylabel("z")
+            ax.set_xlabel("x")
+            #ax.set_title(f"dx={sim.dx},dt={sim.dt},t={round(sim.t,3)}")
+            ax.set_title("dx="+str(sim.dx)+",dt="+str(sim.dt)+ \
+                ",t="+str(round(sim.t,3)))
+            plt.pause(0.05)
+        else:
+            if step % 100 == 0:
+                print("Time: "+sim.time)
     
-    fig.show(False)
+    def continue_test(s):
+        if abs(s.volume() - base_mass) > mass_err_crit:
+            print("Critical volume error reached! Stopping!")
+            return False
+        elif abs(s.energy() - base_energy) > energy_err_crit:
+            print(s.energy(), base_energy, abs(s.energy() - base_energy), energy_err_crit)
+            print("Critical energy error reached! Stopping!")
+            return False
+        elif s.t > tmax:
+            print("Maximum time reached! Stopping!")
+            return False
+        return True
+
+    if gui:
+        fig.show(False)
 
 
     def on_plotsave(sim, filename):
-        fig.savefig(filename)
+        if gui:
+            fig.savefig(filename)
 
     base_mass = sim.volume()
     base_energy = sim.energy()
 
     sim.run_simulation(tsave,0,save_dir,
-        lambda s: abs(s.volume() - base_mass) <= mass_err_crit and\
-                  abs(s.energy() - base_energy) <= energy_err_crit and\
-                  s.t <= tmax,
+        continue_test,
         integrator = "RK4",
         loop_callback = on_loop,
         plot_func=on_plotsave
     )
-    plt.close(fig)
+    if gui:
+        plt.close(fig)
 
 
 #only call everything in the if statement if we ran KY and not imported it

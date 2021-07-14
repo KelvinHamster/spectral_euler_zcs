@@ -454,8 +454,17 @@ class Simulator1D():
                     print("Time: "+str(round(sim.t,3)))
             loop_callback = cb
 
+        step = 0
+
+        #how many steps per plot
+        plotstep = round(saveplot_dt/self.dt)
+        saveplot = plotstep > 0
+
+        #how many steps per data save
+        datastep = round(savedata_dt/self.dt)
+        savedata = datastep > 0
         
-        if plot_func == None:
+        if plot_func == None and saveplot:
             import matplotlib.pyplot as plt
             def do_plot(sim, filename):
                 plt.plot(sim.x, sim.eta, "b")
@@ -469,15 +478,6 @@ class Simulator1D():
                 plt.clf()
             plot_func = do_plot
         
-        step = 0
-
-        #how many steps per plot
-        plotstep = round(saveplot_dt/self.dt)
-        saveplot = plotstep > 0
-
-        #how many steps per data save
-        datastep = round(savedata_dt/self.dt)
-        savedata = datastep > 0
         
         #prep data and write metadata
         meta = {
