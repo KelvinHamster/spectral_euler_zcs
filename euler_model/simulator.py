@@ -450,7 +450,8 @@ class Simulator1D():
         if loop_callback == None:
             def cb(sim, step, plot, data):
                 if step % 100 == 0:
-                    print(f"Time: {round(sim.t,3)}")
+                    #print(f"Time: {round(sim.t,3)}")
+                    print("Time: "+str(round(sim.t,3)))
             loop_callback = cb
 
         
@@ -461,7 +462,9 @@ class Simulator1D():
                 plt.plot(sim.x, sim.zeta - sim.h0, "k")
                 plt.ylabel("z")
                 plt.xlabel("x")
-                plt.title(f"dx={sim.dx},dt={sim.dt},t={round(sim.t,3)}")
+                #plt.title(f"dx={sim.dx},dt={sim.dt},t={round(sim.t,3)}")
+                plt.set_title("dx="+str(sim.dx)+",dt="+str(sim.dt)+ \
+                    ",t="+str(round(sim.t,3)))
                 plt.savefig(filename)
                 plt.clf()
             plot_func = do_plot
@@ -505,7 +508,8 @@ class Simulator1D():
             shoulddata = savedata and (step % datastep == 0)
             
             if shouldplot and directory != None:
-                plot_func(self, f"{directory}{step//plotstep}.png")
+                #plot_func(self, f"{directory}{step//plotstep}.png")
+                plot_func(self, directory+str(step//plotstep)+".png")
             if shoulddata:
                 if save_eta != None:
                     d["eta"].append(
@@ -520,7 +524,8 @@ class Simulator1D():
                             else (len(d["phiS"]) if "phiS" in d else 0)
                     data = {"meta":meta, "data":d}
                     
-                    with open(f"{directory}dat.json","w") as f:
+                    #with open(f"{directory}dat.json","w") as f:
+                    with open(directory+"dat.json","w") as f:
                         json.dump(data, f)
             loop_callback(self, step, shouldplot, shoulddata)
             #step forward
@@ -532,7 +537,8 @@ class Simulator1D():
         data = {"meta":meta, "data":d}
         
         if directory != None:
-            with open(f"{directory}dat.json","w") as f:
+            #with open(f"{directory}dat.json","w") as f:
+            with open(directory+"dat.json","w") as f:
                 json.dump(data, f)
 
         
