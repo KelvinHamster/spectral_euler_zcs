@@ -94,7 +94,7 @@ def sim_KY(Nx = 2**14, a0 = 0.1, h0 = 1.0, X0 = -280, d0 = 0.9, s0 = 1/500,
     sim = Simulator1D(bathym, dt, dx, *init_cond, M=M, v=v, g=g, h0=h0)
     
     if save_dir == None:
-        save_dir = f"./KY_dx{dx}_dt{dt},s{s0},a{a0}_plot"
+        save_dir = f"./KY_dx{dx}_dt{dt}_s{s0}_a{a0}_plot"
 
     
     fig = plt.figure()
