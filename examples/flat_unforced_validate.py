@@ -34,7 +34,76 @@ from euler_model.simulator import Simulator1D
 import numpy as np
 import math
 
-import scipy.optimize as optimize
+minimize_func = None
+try:
+    import scipy.optimize as optimize
+    def minimize(f, x0):
+        """
+        Calculates the shift and distance in L^inf of eta and pS to the soliton.
+        """
+        def f2(x):
+            return f(x[0])
+        res = optimize.minimize(f,x0,method="Nelder-Mead")
+        if res.success:
+            return res.x[0]
+        else:
+            return None
+    minimize_func = minimize
+except:
+    def approx_grad(f,x, h0=0.0001, n = 3):
+        """
+        approximates f' at x using Richardson Extrapolation off of the central
+        difference formula.
+        """
+        def N(i,h):
+            #base case: i=1
+            if i==1:
+                return (f(x+h) - f(x-h))/(2*h)
+            elif i > 1:
+                i -= 1
+                return (2**(2*i)*N(i,h/2) - N(i,h))/(2**(2*i) - 1)
+            return 0
+        return N(n,h0)
+
+    def bfgs_step(f, xk, Bk, eps = 0.0001):
+        #search direction
+        fp = approx_grad(f,xk)
+        p = -fp/Bk
+        if abs(p) > 1:
+            p /= abs(p)*2
+        fk = f(xk)
+        #line search / armijo condition
+        armijo = 0.25
+        alpha = 1
+        while f(xk + alpha*p) > fk + armijo * (fp*alpha*p) and alpha > eps:
+            alpha /= 2
+        d = alpha*p
+        xkp1 = xk + d
+        y = approx_grad(f,xkp1) - fp
+        #bfgs for Bkp1
+        Bkp1 = Bk
+        if abs(y*d) > eps**4 and abs(d*Bk*d) > eps**6:
+            Bkp1 += y*y/(y*d) - Bk*d*d*Bk/(d*Bk*d)
+        return (xkp1,Bkp1,fp)
+
+    def minimize(f, x0, eps = 0.00001):
+        #approx hessian/2nd deriv with finite difference
+        B0 = (f(x0+eps) - 2*f(x0) + f(x0-eps))/(eps*eps)
+        for i in range(500):
+            #force to gradient descent if there is negative curvature
+            recalc_B = False
+            if B0 < eps:
+                B0 = 1
+                recalc_B = True
+            x1, B0, fp = bfgs_step(f,x0,B0)
+            if abs(fp) < eps or abs(x1-x0) < eps*eps:
+                break
+            x0 = x1
+            if recalc_B:
+                B0 = (f(x0+eps) - 2*f(x0) + f(x0-eps))/(eps*eps)
+
+        return x1
+    minimize_func = minimize
 
 Nx = args.Nx
 dx = args.dx
@@ -58,16 +127,17 @@ measure_window = (sim.x > ignore_region)*(sim.x < (sim.sim_length - ignore_regio
 last_x = x0
 def measure_offset(eta, pS):
     """
-    Calculates the shift and distance in L^inf of eta and pS to the soliton.
+    Calculates the shift and distance in L^2 of eta and pS to the soliton.
     """
     def f(x):
-        e0, pS0 = Simulator1D.soliton(x[0],a0,h0,Nx,dx)
-        return np.linalg.norm(measure_window*(e0-eta),ord=np.inf) +\
-               np.linalg.norm(measure_window*(pS0-pS),ord=np.inf)
-    res = optimize.minimize(f,last_x,method="Nelder-Mead")
-    if res.success:
-        e0, pS0 = Simulator1D.soliton(res.x,a0,h0,Nx,dx)
-        return (res.x[0], 
+        e0, pS0 = Simulator1D.soliton(x,a0,h0,Nx,dx)
+        return np.linalg.norm(measure_window*(e0-eta),ord=2) +\
+               np.linalg.norm(measure_window*(pS0-pS),ord=2)
+    res = minimize_func(f,last_x)
+    if res != None:
+        #return max infinity norm
+        e0, pS0 = Simulator1D.soliton(res,a0,h0,Nx,dx)
+        return (res, 
                 np.linalg.norm(measure_window*(e0-eta),ord=np.inf),
                 np.linalg.norm(measure_window*(pS0-pS),ord=np.inf))
     else:
@@ -80,13 +150,16 @@ step = 0
 while sim.t <= tmax:
     if step % valstep == 0:
         x, eta_err, phi_err = measure_offset(sim.eta, sim.phiS)
-        measures.append({
+        frame = {
             "t":sim.t,
             "x":x,
             "eta_error":eta_err,
             "pS_error":phi_err
-        })
-        last_x = x
+        }
+        measures.append(frame)
+        print(frame)
+        if x != None:
+            last_x = x
     sim.step(method)
     step += 1
 
