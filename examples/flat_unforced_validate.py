@@ -80,7 +80,6 @@ step = 0
 while sim.t <= tmax:
     if step % valstep == 0:
         x, eta_err, phi_err = measure_offset(sim.eta, sim.phiS)
-        print(f"-=-Time {round(sim.t,3)}-=-\nx = {x}\neta error: {eta_err}\npS error: {phi_err}\n\n\n")
         measures.append({
             "t":sim.t,
             "x":x,
