@@ -120,7 +120,6 @@ def sim_KY(Nx = 2**14, a0 = 0.1, h0 = 1.0, X0 = -280, d0 = 0.9, s0 = 1.0/500,
             print("Critical volume error reached! Stopping!")
             return False
         elif abs(s.energy() - base_energy) > energy_err_crit:
-            print(s.energy(), base_energy, abs(s.energy() - base_energy), energy_err_crit)
             print("Critical energy error reached! Stopping!")
             return False
         elif s.t > tmax:
