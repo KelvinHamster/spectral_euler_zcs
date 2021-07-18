@@ -1,6 +1,8 @@
 from __future__ import division
 import math
 import numpy as np
+import matplotlib.pyplot as plt
+
 from euler_model.integrator import Integrator1D
 
 class Simulator1D():
@@ -671,6 +673,43 @@ class Simulator1D():
             (-9/32*s2t-3/2*s4t)+(1+eta/h0)**4*(-3/16*s2t+9/16*s4t))))
 
         return (eta,ps)
+
+
+    @staticmethod
+    def solitonFF(x0,a0,h0,Nx,dx,g = 9.81):
+        """
+        Returns a tuple corresponding to eta and phiS of a soliton at
+        a given point in space.
+
+        x0   -- The x coordinate of the soliton, where
+                x=0 corresponds with an index of 0 in the vectorization
+                of eta and phiS
+        a0   -- The amplitude of the soliton
+        h0   -- The water deph beneath the soliton
+        Nx   -- The number of points in the vectorization of eta and phiS
+        dx   -- The spatial resolution (distance between points)
+        g    -- acceleration due to gravity [default: 9.81]
+        """
+        alpha = a0/h0
+        K0 = math.sqrt((3*a0)/(4*h0**3)) \
+                * (1 - (5/8)*alpha + (71/128)*alpha**2)
+        
+        sim_length = Nx * dx; x = np.linspace(0,sim_length,Nx)
+
+        s2 = np.cosh(K0 * (x - x0))
+        s2 **= -2
+        ta = np.tanh(K0 * (x - x0))
+        s2t = s2 * ta
+        s4t = s2t * s2
+
+        eta = h0*((alpha)*s2 - (3/4)*alpha**2*(s2-s2**2) + alpha**3*(
+            (5/8)*s2 - (151/80)*s2**2 + (101/80)*s2**3))
+        ps = (((alpha)*math.sqrt(g*h0)/(math.sqrt((3*a0)/(4*h0**3)))) \
+            *(ta+(alpha)*(5/24*ta-1/3*s2t+3/4*(1+eta/h0)**2*s2t) \
+            +(alpha)**2*(-1257/3200*ta+9/200*s2t+6/25*s4t+(1+eta/h0)**2* \
+            (-9/32*s2t-3/2*s4t)+(1+eta/h0)**4*(-3/16*s2t+9/16*s4t))))
+
+        return (eta,ps)
     
     @staticmethod
     def KY_bathym(Nx = 2**14, dx = 0.04, s0=0.002, d0 = 0.9,
@@ -710,6 +749,83 @@ class Simulator1D():
                 bath[i] = d0
 
         return bath
+
+    @staticmethod
+    def smooth_bathy(h, i, Lwidth, dx):
+        """ 
+        smooths out the bathy
+        """
+        nwidth = round(Lwidth/dx)
+        hnew = 0.0
+        wtot = 0.0
+        for k in np.arrange(-nwidth, nwidth+1):
+            w =  exp( ((x[i]-x[k])/Lwidth)**2 )
+            wtot += w
+            hnew += h[i+k]*w
+
+        hnew /= wtot
+
+        return hnew
+
+
+
+    @staticmethod
+    def KY_bathyFF(L = 500.0, dx = 0.04, h0 = 1, s0=0.002, d0 = 0.1,
+                   gamma = 0.1, Ltoe = 100.0):
+        """
+        Produces a FF version of bathymetry profile similar to Knowles and Yeh's paper.
+        expects h0 = 1, but the result can be multiplied by the desired h0.
+
+        L    -  distance of domain in meters: offshore is x=0  onshore is x=L
+        dx    - spatial resolution (distance between each point in meters)
+        h0    - deep water depth in meters
+        s0    - nominal slope of the bathymetry
+        d0    - height of the beach plateau in meters
+        gamma - smoothing parameter
+        Ltoe  - position where the bathymetry should start sloping up
+        """
+        x = np.arange(0, L+dx, dx)
+        xtrue = x
+        xtoe = x-Ltoe
+        Nx = x.size
+        h  = np.zeros(Nx)
+
+        h = h0-xtoe*s0      # basic slope bathy
+
+        Lbeach = Ltoe + (h0-d0)/s0
+        Lsmooth1 = gamma*h0/s0
+        Ltoe_smooth = Ltoe+ Lsmooth1
+        Toe_sqr_coeff = s0/(Lsmooth1)
+        Lsmooth2 = gamma*d0/s0
+        Lbeach_smooth = Lbeach - Lsmooth2
+        Beach_sqr_coeff = s0/(Lsmooth1)
+#        print(Ltoe_smooth)
+#        print(Lsmooth1)
+#        print(Lsmooth2)
+#        print(Lbeach_smooth)
+      
+        
+        for (i,x) in enumerate(x):
+            if x < Ltoe:
+               h[i] = h0;
+            elif x < Ltoe_smooth:
+               h[i] =  smooth_bathy(h,i,Lwidth,dx) 
+            elif x < Lbeach_smooth:
+               h[i] = h0 - xtoe[i]*s0
+            elif x < Lbeach:
+               h[i] = smooth_bathy(h,i,Lwidth,dx) 
+            elif h[i] < d0:
+               h[i]=d0;
+
+#        fig = plt.figure()
+#        ax = fig.add_subplot(1,1,1)
+#        ax.clear 
+#        ax.plot(xtrue,-h,"k*")
+#        plt.pause(5)
+#        exit()
+        return xtrue, h
+
+
 
     @staticmethod
     def KY_SIM(Nx=2**14, dx = 0.04, dt = 0.01, s0 = 1.0/500,
