@@ -756,15 +756,10 @@ class Simulator1D():
         smooths out the bathy
         """
         nwidth = round(Lwidth/dx)
-        hnew = 0.0
-        wtot = 0.0
-        for k in np.arrange(-nwidth, nwidth+1):
-            w =  exp( ((x[i]-x[k])/Lwidth)**2 )
-            wtot += w
-            hnew += h[i+k]*w
-
-        hnew /= wtot
-
+        K = np.arange(-nwidth, nwidth+1)
+        W = np.exp( -(K*dx/Lwidth)**2 )
+        WTOT = np.sum(W)
+        hnew = np.sum( h[i +K]* W)/WTOT
         return hnew
 
 
@@ -791,38 +786,20 @@ class Simulator1D():
         h  = np.zeros(Nx)
 
         h = h0-xtoe*s0      # basic slope bathy
+        h2 = h
+        Lwidth=5  # this is hard coded in 5m smoothing scale.  
 
-        Lbeach = Ltoe + (h0-d0)/s0
-        Lsmooth1 = gamma*h0/s0
-        Ltoe_smooth = Ltoe+ Lsmooth1
-        Toe_sqr_coeff = s0/(Lsmooth1)
-        Lsmooth2 = gamma*d0/s0
-        Lbeach_smooth = Lbeach - Lsmooth2
-        Beach_sqr_coeff = s0/(Lsmooth1)
-#        print(Ltoe_smooth)
-#        print(Lsmooth1)
-#        print(Lsmooth2)
-#        print(Lbeach_smooth)
-      
-        
-        for (i,x) in enumerate(x):
-            if x < Ltoe:
+        for (i,xnew) in enumerate(x): # make the offshore flat and onshore flat regions
+            if xnew < Ltoe:
                h[i] = h0;
-            elif x < Ltoe_smooth:
-               h[i] =  smooth_bathy(h,i,Lwidth,dx) 
-            elif x < Lbeach_smooth:
-               h[i] = h0 - xtoe[i]*s0
-            elif x < Lbeach:
-               h[i] = smooth_bathy(h,i,Lwidth,dx) 
             elif h[i] < d0:
                h[i]=d0;
 
-#        fig = plt.figure()
-#        ax = fig.add_subplot(1,1,1)
-#        ax.clear 
-#        ax.plot(xtrue,-h,"k*")
-#        plt.pause(5)
-#        exit()
+        # now smooth out the entire domain
+        for (i,xnew) in enumerate(x):
+             if xnew > Lwidth*2.0 and  xnew < L-2*Lwidth:
+                h2[i] = Simulator1D.smooth_bathy(h,i,Lwidth,dx) 
+
         return xtrue, h
 
 
