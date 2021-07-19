@@ -239,13 +239,13 @@ function or string that timesteps the simulation.
                     ``RK4" \\\hline
 
 save\_eta &
-                   Parameters for how eta should be saved when data is saved.
+                   Parameters for how eta should be saved when data is saved to json.
                     This should be generated using
                     Simulator1D.data\_save\_params(). If None, then eta is not
                     saved. & None\\\hline
         
         save\_phi &
-                   Parameters for how phiS should be saved when data is saved.
+                   Parameters for how phiS should be saved when data is saved to json.
                     This should be generated using
                     Simulator1D.data\_save\_params(). If None, then phiS is not
                     saved. & None\\\hline
@@ -271,7 +271,32 @@ save\_eta &
         plot\_func &
                    A function that is dedicated to plotting and saving the
                     figure. The function is expected to be void and take the
-                    arguments (sim, filename). & (see below)
+                    arguments (sim, filename). & (see below)\\\hline
+        save\_json &
+                   Whether or not to save the file to json. The metadata of
+                    the simulation is saved even if savedata\_dt is not
+                    positive. Setting save\_json to false prevents this. & False\\\hline
+        save\_netcdf&
+                   Whether or not to save the file to netcdf. The netCDF file
+                    ignores data truncation specifications of save\_eta and
+                    save\_phi. & True \\\hline
+        save\_buffer
+                  & number of datapoints to buffer in between file-writes. If 0
+                    or 1, then every savedata\_dt, the json/netCDF file is opened
+                    and written to. & 10 \\\hline
+        cdf\_h\_invariant
+                  & Whether or not h is treated as invariant. If false, then
+                    the bathymetry is saved every frame, alongside $\eta$ and
+                    $\phi^S$. & True\\\hline
+        cdf\_Pderiv
+                  &The string that should populate the P\_deriv field in the
+                    netcdf file. & ``zero"\\\hline
+        cdf\_timeunits
+                  & The string that specifies the units of time for the
+                    simulation. & ``seconds"\\\hline
+        cdf\_spaceunits
+                  & The string that specifies the units of x for the
+                    simulation. & ``h0*meters"
 \end{optarglist}
 
 By default, plot\_func is defined as the function
@@ -301,7 +326,7 @@ Returns a dictionary of parameters for how to save data from a simulation. The o
               & The spatial resolution to save with. If None, then the
                 resolution is the same as the simulation. This value
                 will always be rounded to a whole number multiple of
-                the simulaton dx. & None \\\hline
+                the simulation dx. & None \\\hline
 
         point\_conversion
               & A boolean that represents if data should be coded as

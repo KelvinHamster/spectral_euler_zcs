@@ -370,7 +370,12 @@ class Simulator1D():
             save_eta = None,
             save_phi = None,
             loop_callback = None,
-            plot_func = None):
+            plot_func = None,
+            save_json = False,
+            save_netcdf = True, save_buffer = 10,
+            cdf_h_invariant = True,
+            cdf_Pderiv = "zero", cdf_timeunits = "seconds",
+            cdf_spaceunits = "h0*meters"):
         """
         Automatically integrates eta and phiS over a set of timesteps,
         saving plots and/or data at given intervals in time.
@@ -416,14 +421,14 @@ class Simulator1D():
                     By default, this value is "RK4"
 
         save_eta
-                  - Parameters for how eta should be saved when data is saved.
-                    This should be generated using
+                  - Parameters for how eta should be saved when data is saved
+                    to json. This should be generated using
                     Simulator1D.data_save_params(). If None, then eta is not
                     saved.
         
         save_phi
-                  - Parameters for how phiS should be saved when data is saved.
-                    This should be generated using
+                  - Parameters for how phiS should be saved when data is saved
+                    to json. This should be generated using
                     Simulator1D.data_save_params(). If None, then phiS is not
                     saved.
 
@@ -445,6 +450,32 @@ class Simulator1D():
                   - A function that is dedicated to plotting and saving the
                     figure. The function is expected to be void and take the
                     arguments (sim, filename).
+
+        save_json
+                  - Whether or not to save the file to json. The metadata of
+                    the simulation is saved even if savedata_dt is not
+                    positive. Setting save_json to false prevents this.
+        save_netcdf
+                  - Whether or not to save the file to netcdf. The netCDF file
+                    ignores data truncation specifications of save_eta and
+                    save_phi.
+        save_buffer
+                  - number of datapoints to buffer in between file-writes. If 0
+                    or 1, then every savedata_dt, the json/netCDF file is opened
+                    and written to.
+        cdf_h_invariant
+                  - Whether or not h is treated as invariant. If false, then
+                    the bathymetry is saved every frame, alongside eta and
+                    phiS.
+        cdf_Pderiv
+                  - The string that should populate the P_deriv field in the
+                    netcdf file.
+        cdf_timeunits
+                  - The string that specifies the units of time for the
+                    simulation.
+        cdf_spaceunits
+                  - The string that specifies the units of x for the
+                    simulation.
         """
         if not callable(integrator):
             method = integrator
@@ -456,6 +487,83 @@ class Simulator1D():
                     #print(f"Time: {round(sim.t,3)}")
                     print("Time: "+str(round(sim.t,3)))
             loop_callback = cb
+
+        if save_netcdf:
+            from scipy.io import netcdf
+            ncdf_filename = f"{directory}sim.nc"
+            # initialize the file
+            f = netcdf.netcdf_file(ncdf_filename, 'w')
+            f.dx = np.array((self.dx),dtype=np.float64)
+            f.dt = np.array((self.dt),dtype=np.float64)
+            f.Nx = self.Nx
+            if hasattr(self,'a0'):
+                f.a0 = self.a0
+            f.h0 = self.h0
+            f.M = self.M
+            f.g = np.array((self.g),dtype=np.float64)
+            f.length = np.array((self.Nx*self.dx),dtype=np.float64)
+            f.h_invariant = cdf_h_invariant
+            f.P_deriv = cdf_Pderiv
+
+            f.createDimension('time', None)
+            f.createDimension('x', self.Nx)
+            time = f.createVariable('time', np.float64, ('time',))
+            time.units = cdf_timeunits
+            time[0] = self.t
+            x = f.createVariable('x', np.float64, ('x',))
+            x.units = cdf_spaceunits
+            x[:] = self.x
+
+            if cdf_h_invariant:
+                h = f.createVariable('h', np.float64, ('x',))
+                h[:] = self.h0 - self.zeta
+            else:
+                f.createVariable('h', np.float64, ('time','x'))
+                h[0] = self.h0 - self.zeta
+            eta = f.createVariable('eta', np.float64, ('time','x'))
+            eta[0] = self.eta
+            ps = f.createVariable('pS', np.float64, ('time','x'))
+            ps[0] = self.phiS
+            chi = f.createVariable('chi', np.float64, ('x',))
+            chi[:] = self.chi[:self.Nx]
+            f.close()
+        #data for method below:
+        netcdf_buffer_t = []
+        netcdf_buffer_eta = []
+        netcdf_buffer_pS = []
+        netcdf_buffer_h = []
+        #call whenever we want to put the next timestep in the netcdf file
+        def append_netcdf(sim, step, flush_only = False):
+            if not save_netcdf:
+                return
+            #append the data to the buffer
+            if not flush_only:
+                netcdf_buffer_t.append(sim.t)
+                netcdf_buffer_eta.append(sim.eta)
+                netcdf_buffer_pS.append(sim.phiS)
+                if cdf_h_invariant == 0:
+                    netcdf_buffer_h.append(sim.h0 - sim.zeta)
+            #if the buffer is full or we force a flush, write it out
+            buf_size = len(netcdf_buffer_t)
+            if buf_size >= save_buffer or (flush_only and buf_size > 0):
+                f = netcdf.netcdf_file(ncdf_filename, 'a')
+                time = f.variables['time']
+                for j in range(buf_size):
+                    i = len(time[:])
+                    time[i] = netcdf_buffer_t[j]
+                    
+                    #copy values
+                    f.variables['eta'][i] = netcdf_buffer_eta[j]
+                    f.variables['pS'][i] = netcdf_buffer_pS[j]
+                    # set bathymetry if variant
+                    if cdf_h_invariant == 0:
+                        f.variables['h'][i] = netcdf_buffer_h[j]
+                del time
+                f.close()
+                netcdf_buffer_t.clear()
+                netcdf_buffer_eta.clear()
+                netcdf_buffer_pS.clear()
+                netcdf_buffer_h.clear()
 
         step = 0
 
@@ -474,9 +582,7 @@ class Simulator1D():
                 plt.plot(sim.x, sim.zeta - sim.h0, "k")
                 plt.ylabel("z")
                 plt.xlabel("x")
-                #plt.title(f"dx={sim.dx},dt={sim.dt},t={round(sim.t,3)}")
-                plt.set_title("dx="+str(sim.dx)+",dt="+str(sim.dt)+ \
-                    ",t="+str(round(sim.t,3)))
+                plt.title(f"dx={sim.dx},dt={sim.dt},t={round(sim.t,3)}")
                 plt.savefig(filename)
                 plt.clf()
             plot_func = do_plot
@@ -511,8 +617,7 @@ class Simulator1D():
             shoulddata = savedata and (step % datastep == 0)
             
             if shouldplot and directory != None:
-                #plot_func(self, f"{directory}{step//plotstep}.png")
-                plot_func(self, directory+str(step//plotstep)+".png")
+                plot_func(self, f"{directory}{step//plotstep}.png")
             if shoulddata:
                 if save_eta != None:
                     d["eta"].append(
@@ -520,15 +625,19 @@ class Simulator1D():
                 if save_phi != None:
                     d["phiS"].append(
                         Simulator1D.vec_to_data(self.phiS, self.dx, save_phi))
+                
+                #netcdf data: we already wrote the first data point
+                if step > 0:
+                    append_netcdf(self, step)
+
                 #save the file after every 10 data collections so we don't lose
                 #much data when we stop
-                if (step//datastep) % 10 == 0 and directory != None:
+                if (step//datastep) % save_buffer == 0 and directory != None:
                     meta["datapoints"] = len(d["eta"]) if "eta" in d \
                             else (len(d["phiS"]) if "phiS" in d else 0)
                     data = {"meta":meta, "data":d}
                     
-                    #with open(f"{directory}dat.json","w") as f:
-                    with open(directory+"dat.json","w") as f:
+                    with open(f"{directory}dat.json","w") as f:
                         json.dump(data, f)
             loop_callback(self, step, shouldplot, shoulddata)
             #step forward
@@ -539,9 +648,9 @@ class Simulator1D():
                 else (len(d["phiS"]) if "phiS" in d else 0)
         data = {"meta":meta, "data":d}
         
+        append_netcdf(self, step, flush_only=True)
         if directory != None:
-            #with open(f"{directory}dat.json","w") as f:
-            with open(directory+"dat.json","w") as f:
+            with open(f"{directory}dat.json","w") as f:
                 json.dump(data, f)
 
         
