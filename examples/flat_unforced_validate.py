@@ -20,7 +20,8 @@ parser.add_argument("-d","--duration", help="set the maximum time to run", type=
 parser.add_argument("-v","--lowpass", help="set the low-pass filter", type=float, default=0.7)
 parser.add_argument("-i","--ignore", help="margin on edges of simulation to ignore when measuring offsets (in x-space)", type=float, default=25)
 parser.add_argument("-m","--method", help="set the integration method", type=str, default="RK4")
-parser.add_argument("-S","--save", help="if a file containing the data should be saved or not", action="store_true")
+parser.add_argument("-S","--save", help="if a json file containing the data should be saved or not", action="store_true")
+parser.add_argument("--netcdf", help="if the data should be stored in netCDF along side eta/phi values", action="store_true")
 parser.add_argument("-o","--output", help="directory/filename, no suffix, of where to save the data.", type=str, default="flat_unforced")
 
 args = parser.parse_args()
@@ -34,76 +35,18 @@ from euler_model.simulator import Simulator1D
 import numpy as np
 import math
 
-minimize_func = None
-try:
-    import scipy.optimize as optimize
-    def minimize(f, x0):
-        """
-        Calculates the shift and distance in L^inf of eta and pS to the soliton.
-        """
-        def f2(x):
-            return f(x[0])
-        res = optimize.minimize(f,x0,method="Nelder-Mead")
-        if res.success:
-            return res.x[0]
-        else:
-            return None
-    minimize_func = minimize
-except:
-    def approx_grad(f,x, h0=0.0001, n = 3):
-        """
-        approximates f' at x using Richardson Extrapolation off of the central
-        difference formula.
-        """
-        def N(i,h):
-            #base case: i=1
-            if i==1:
-                return (f(x+h) - f(x-h))/(2*h)
-            elif i > 1:
-                i -= 1
-                return (2**(2*i)*N(i,h/2) - N(i,h))/(2**(2*i) - 1)
-            return 0
-        return N(n,h0)
-
-    def bfgs_step(f, xk, Bk, eps = 0.0001):
-        #search direction
-        fp = approx_grad(f,xk)
-        p = -fp/Bk
-        if abs(p) > 1:
-            p /= abs(p)*2
-        fk = f(xk)
-        #line search / armijo condition
-        armijo = 0.25
-        alpha = 1
-        while f(xk + alpha*p) > fk + armijo * (fp*alpha*p) and alpha > eps:
-            alpha /= 2
-        d = alpha*p
-        xkp1 = xk + d
-        y = approx_grad(f,xkp1) - fp
-        #bfgs for Bkp1
-        Bkp1 = Bk
-        if abs(y*d) > eps**4 and abs(d*Bk*d) > eps**6:
-            Bkp1 += y*y/(y*d) - Bk*d*d*Bk/(d*Bk*d)
-        return (xkp1,Bkp1,fp)
-
-    def minimize(f, x0, eps = 0.00001):
-        #approx hessian/2nd deriv with finite difference
-        B0 = (f(x0+eps) - 2*f(x0) + f(x0-eps))/(eps*eps)
-        for i in range(500):
-            #force to gradient descent if there is negative curvature
-            recalc_B = False
-            if B0 < eps:
-                B0 = 1
-                recalc_B = True
-            x1, B0, fp = bfgs_step(f,x0,B0)
-            if abs(fp) < eps or abs(x1-x0) < eps*eps:
-                break
-            x0 = x1
-            if recalc_B:
-                B0 = (f(x0+eps) - 2*f(x0) + f(x0-eps))/(eps*eps)
-
-        return x1
-    minimize_func = minimize
+import scipy.optimize as optimize
+def minimize_func(f, x0):
+    """
+    Calculates the shift and distance in L^inf of eta and pS to the soliton.
+    """
+    def f2(x):
+        return f(x[0])
+    res = optimize.minimize(f,x0,method="Nelder-Mead")
+    if res.success:
+        return res.x[0]
+    else:
+        return None
 
 Nx = args.Nx
 dx = args.dx
@@ -115,12 +58,15 @@ method = args.method
 valstep = args.step
 ignore_region = args.ignore
 
+usencdf = args.netcdf
+
 
 x0 = Nx*dx/2
 
 sim = Simulator1D(np.ones(Nx)*(-h0), dt, dx,
     *Simulator1D.soliton(x0,a0,h0,Nx,dx),
 v=args.lowpass)
+sim.a0 = a0
 
 measure_window = (sim.x > ignore_region)*(sim.x < (sim.sim_length - ignore_region))
 
@@ -146,9 +92,21 @@ def measure_offset(eta, pS):
 
 measures = []
 
+if usencdf:
+    from scipy.io import netcdf
+    f = sim.init_netcdf(f"{args.output}.nc", True, "zero", close = False)
+    timevar = f.variables['time']
+    #new variables for cool stuff
+    f.createVariable('solit_x', np.float64, ('time',))
+    f.createVariable('solit_eta_err', np.float64, ('time',))
+    f.createVariable('solit_pS_err', np.float64, ('time',))
+
+
+
 step = 0
 while sim.t <= tmax:
     if step % valstep == 0:
+        #log error values
         x, eta_err, phi_err = measure_offset(sim.eta, sim.phiS)
         frame = {
             "t":sim.t,
@@ -160,8 +118,24 @@ while sim.t <= tmax:
         print(frame)
         if x != None:
             last_x = x
+        
+        #save netcdf: overwrite step 0 just because
+        if usencdf:
+            t_index = len(timevar[:]) if (step > 0) else 0
+            timevar[t_index] = sim.t
+            f.variables['eta'][t_index] = sim.eta
+            f.variables['pS'][t_index] = sim.phiS
+            f.variables['solit_x'][t_index] = x
+            f.variables['solit_eta_err'][t_index] = eta_err
+            f.variables['solit_pS_err'][t_index] = phi_err
+    
+
     sim.step(method)
     step += 1
+
+if usencdf:
+    f.close()
+
 
 if args.save:
     fname = args.output

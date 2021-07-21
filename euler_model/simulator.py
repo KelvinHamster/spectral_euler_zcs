@@ -3,6 +3,8 @@ import math
 import numpy as np
 import matplotlib.pyplot as plt
 
+from scipy.io import netcdf
+
 from euler_model.integrator import Integrator1D
 
 class Simulator1D():
@@ -489,44 +491,9 @@ class Simulator1D():
             loop_callback = cb
 
         if save_netcdf:
-            from scipy.io import netcdf
             ncdf_filename = f"{directory}sim.nc"
-            # initialize the file
-            f = netcdf.netcdf_file(ncdf_filename, 'w')
-            f.dx = np.array((self.dx),dtype=np.float64)
-            f.dt = np.array((self.dt),dtype=np.float64)
-            f.Nx = self.Nx
-            if hasattr(self,'a0'):
-                f.a0 = self.a0
-            f.h0 = self.h0
-            f.M = self.M
-            f.g = np.array((self.g),dtype=np.float64)
-            f.length = np.array((self.Nx*self.dx),dtype=np.float64)
-            f.h_invariant = cdf_h_invariant
-            f.P_deriv = cdf_Pderiv
-
-            f.createDimension('time', None)
-            f.createDimension('x', self.Nx)
-            time = f.createVariable('time', np.float64, ('time',))
-            time.units = cdf_timeunits
-            time[0] = self.t
-            x = f.createVariable('x', np.float64, ('x',))
-            x.units = cdf_spaceunits
-            x[:] = self.x
-
-            if cdf_h_invariant:
-                h = f.createVariable('h', np.float64, ('x',))
-                h[:] = self.h0 - self.zeta
-            else:
-                f.createVariable('h', np.float64, ('time','x'))
-                h[0] = self.h0 - self.zeta
-            eta = f.createVariable('eta', np.float64, ('time','x'))
-            eta[0] = self.eta
-            ps = f.createVariable('pS', np.float64, ('time','x'))
-            ps[0] = self.phiS
-            chi = f.createVariable('chi', np.float64, ('x',))
-            chi[:] = self.chi[:self.Nx]
-            f.close()
+            self.init_netcdf(ncdf_filename, cdf_h_invariant,
+                    cdf_Pderiv, cdf_timeunits, cdf_spaceunits, close=True)
         #data for method below:
         netcdf_buffer_t = []
         netcdf_buffer_eta = []
@@ -653,7 +620,80 @@ class Simulator1D():
             with open(f"{directory}dat.json","w") as f:
                 json.dump(data, f)
 
+    def init_netcdf(self, filename, h_invariant, P_deriv,
+            timeunits = "seconds", spaceunits = "h0*meters",
+            P = 0, close = True):
+        """
+        Generates a netCDF file of the given filename and populates it with
+        one point in time representing the simulation's current state.
+        Returns the netCDF_File object.
+
+        filename
+                  - The name of the file to be saved. Overwrites existing files
+
+        h_invariant
+                  - Whether the simulation should be treated as if h does not
+                    vary with time
         
+        P_deriv
+                  - Information on how pressure is obtained. Expects "zero",
+                    "wind" or "custom".
+        
+        timeunits
+                  - A string representing the units for time
+        
+        spaceunits
+                  - A string representing the units for spatial coordinates
+
+        P
+                  - if P_deriv is "zero" then this does nothing.
+                    If "wind", then the P attribute is set to this value.
+                    If "custom", then P is the P_a variable at time index 0.
+
+        close
+                  - Whether or not this method should close the netcdf file
+                    resource after initialization.
+        """
+        # initialize the file
+        f = netcdf.netcdf_file(filename, 'w')
+        f.dx = np.array((self.dx),dtype=np.float64)
+        f.dt = np.array((self.dt),dtype=np.float64)
+        f.Nx = self.Nx
+        if hasattr(self,'a0'):
+            f.a0 = self.a0
+        f.h0 = self.h0
+        f.M = self.M
+        f.g = np.array((self.g),dtype=np.float64)
+        f.length = np.array((self.Nx*self.dx),dtype=np.float64)
+        f.h_invariant = h_invariant
+        f.P_deriv = P_deriv
+
+        f.createDimension('time', None)
+        f.createDimension('x', self.Nx)
+        time = f.createVariable('time', np.float64, ('time',))
+        time.units = timeunits
+        time[0] = self.t
+        x = f.createVariable('x', np.float64, ('x',))
+        x.units = spaceunits
+        x[:] = self.x
+
+        if h_invariant:
+            h = f.createVariable('h', np.float64, ('x',))
+            h[:] = self.h0 - self.zeta
+        else:
+            f.createVariable('h', np.float64, ('time','x'))
+            h[0] = self.h0 - self.zeta
+        eta = f.createVariable('eta', np.float64, ('time','x'))
+        eta[0] = self.eta
+        ps = f.createVariable('pS', np.float64, ('time','x'))
+        ps[0] = self.phiS
+        chi = f.createVariable('chi', np.float64, ('x',))
+        chi[:] = self.chi[:self.Nx]
+        if close:
+            f.close()
+        return f
+
+
     @staticmethod
     def vec_to_data(vec, dx, params):
         """

@@ -18,7 +18,7 @@
     {\begin{center}
     \begin{tabular}{l|p{12cm}}
     argument & description\\
-    \hline\\
+    \hline
     }
     { 
     \end{tabular} 
@@ -30,7 +30,7 @@
     {\begin{center}
     \begin{tabular}{l|p{10cm}|l}
     argument & description & default\\
-    \hline\\
+    \hline
     }
     { 
     \end{tabular} 
@@ -296,7 +296,7 @@ save\_eta &
                     simulation. & ``seconds"\\\hline
         cdf\_spaceunits
                   & The string that specifies the units of x for the
-                    simulation. & ``h0*meters"
+                    simulation. & ``meters"
 \end{optarglist}
 
 By default, plot\_func is defined as the function
@@ -352,6 +352,52 @@ Returns a dictionary of parameters for how to save data from a simulation. The o
               & If a value is less than this distance from 0, the value is 
                 truncated to 0 before saving.& 0
 \end{optarglist}
+
+
+
+
+\subsubsection{\texttt{Simulator1D}: init\_netcdf()}
+\texttt{Simulator1D.init\_netcdf(``unforced.nc", True, ``zero")}
+
+
+        Generates a netCDF file of the given filename and populates it with
+        one point in time representing the simulation's current state. If the file
+already exists, then it is overwritten with a new file.
+
+        Returns the netCDF\_File object.
+
+\begin{arglist}
+        filename
+                  & The name of the file to be saved. Overwrites existing files\\\hline
+
+        h\_invariant
+                  & Whether the simulation should be treated as if h does not
+                    vary with time\\\hline
+        
+        P\_deriv
+                  & Information on how pressure is obtained. Expects ``zero",
+                    ``wind" or ``custom".
+\end{arglist}
+
+\begin{optarglist}
+        timeunits    
+              & A string representing the units for time. & ``seconds" \\\hline
+
+        spaceunits
+              &A string representing the units for spatial coordinates. & ``meters" \\\hline
+
+        P
+              &If P\_deriv is "zero" then this does nothing.
+
+                    If it is "wind", then the P attribute is set to this value.
+
+                    If it is "custom", then P is the P\_a variable at time index 0. & 0\\\hline
+        
+        close
+             & Whether or not this method should close the netcdf file
+                    resource after initialization. &  True
+\end{optarglist}
+
 
 
 
