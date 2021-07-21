@@ -17,7 +17,7 @@ class Simulator1D():
     """
 
     def __init__(self, bathymetry, dt, dx, eta0, phiS0, zeta_x = None,
-            M = 5, v = 0.7, g = 9.81, h0 = None):
+            M = 5, v = 0.7, g = 9.81, h0 = None, P = 0):
         """
         Initializes a Simulator instance with the given parameters:
             bathymetry  --  numpy array of the bathymetry, must have an even
@@ -42,6 +42,12 @@ class Simulator1D():
                     [default: 0.7]
             g    -- acceleration due to gravity. [default: 9.81]
             h0   -- base still water depth [default: bathymetry[0]]
+
+            P    -- Wind pressure coefficient. Atmospheric pressure is set to be
+                    P*eta_x to simulate the wind effect, unless P_atmos is over-
+                    written in the step() method.
+                    See Zdyrski and Feddersen (2021)
+                    [default: 0]
         """
         self.dt = dt; self.dx = dx
         self.eta = eta0; self.phiS = phiS0
@@ -93,6 +99,8 @@ class Simulator1D():
         else:
             self.zeta_x = zeta_x
 
+        self.P = P # wind pressure coefficient
+
         self.t = 0 # time in the simulation
 
     def step(self, method, P_atmos = None, *args, **kwargs):
@@ -107,8 +115,12 @@ class Simulator1D():
                 name is used.
 
         P_atmos
-              - Atmospheric pressure at the surface.
+              - Atmospheric pressure at the surface. By default, this is the
+                function wind_pressure
         """
+        if P_atmos == None:
+            P_atmos = self.wind_pressure
+        
         if callable(method):
             method(self,P_atmos,*args,**kwargs)
         else:
@@ -376,8 +388,8 @@ class Simulator1D():
             save_json = False,
             save_netcdf = True, save_buffer = 10,
             cdf_h_invariant = True,
-            cdf_Pderiv = "zero", cdf_timeunits = "seconds",
-            cdf_spaceunits = "h0*meters"):
+            cdf_Pderiv = None, cdf_timeunits = "seconds",
+            cdf_spaceunits = "meters"):
         """
         Automatically integrates eta and phiS over a set of timesteps,
         saving plots and/or data at given intervals in time.
@@ -489,6 +501,9 @@ class Simulator1D():
                     #print(f"Time: {round(sim.t,3)}")
                     print("Time: "+str(round(sim.t,3)))
             loop_callback = cb
+        
+        if cdf_Pderiv == None:
+            cdf_Pderiv = "zero" if self.P == 0 else "wind"
 
         if save_netcdf:
             ncdf_filename = f"{directory}sim.nc"
@@ -599,7 +614,7 @@ class Simulator1D():
 
                 #save the file after every 10 data collections so we don't lose
                 #much data when we stop
-                if (step//datastep) % save_buffer == 0 and directory != None:
+                if save_json and (step//datastep) % save_buffer == 0 and directory != None:
                     meta["datapoints"] = len(d["eta"]) if "eta" in d \
                             else (len(d["phiS"]) if "phiS" in d else 0)
                     data = {"meta":meta, "data":d}
@@ -616,13 +631,13 @@ class Simulator1D():
         data = {"meta":meta, "data":d}
         
         append_netcdf(self, step, flush_only=True)
-        if directory != None:
+        if save_json and directory != None:
             with open(f"{directory}dat.json","w") as f:
                 json.dump(data, f)
 
-    def init_netcdf(self, filename, h_invariant, P_deriv,
-            timeunits = "seconds", spaceunits = "h0*meters",
-            P = 0, close = True):
+    def init_netcdf(self, filename, h_invariant = True, P_deriv = None,
+            timeunits = "seconds", spaceunits = "meters",
+            P = None, close = True):
         """
         Generates a netCDF file of the given filename and populates it with
         one point in time representing the simulation's current state.
@@ -654,6 +669,10 @@ class Simulator1D():
                   - Whether or not this method should close the netcdf file
                     resource after initialization.
         """
+        if P_deriv == None:
+            P_deriv = "zero" if self.P == 0 else "wind"
+        if P == None:
+            P = self.P
         # initialize the file
         f = netcdf.netcdf_file(filename, 'w')
         f.dx = np.array((self.dx),dtype=np.float64)
@@ -823,6 +842,11 @@ class Simulator1D():
 
         return (eta,ps)
 
+    def wind_pressure(self,eta,pS,etax,pSx,w):
+        """
+        Pressure function to emulate wind.
+        """
+        return etax * self.P
 
     @staticmethod
     def solitonFF(x0,a0,h0,Nx,dx,g = 9.81):

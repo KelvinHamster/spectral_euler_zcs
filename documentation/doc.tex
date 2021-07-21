@@ -5,7 +5,7 @@
 \usepackage[parfill]{parskip}
 \usepackage{amsmath}
 \usepackage{mathrsfs}
-
+\usepackage{graphicx}
 
 \DeclareMathOperator*{\argmax}{arg\,max}
 \DeclareMathOperator*{\argmin}{arg\,min}
@@ -95,7 +95,11 @@ $$f'(x) = \frac{f(x+h)-f(x-h)}{2h} + O(h^2)$$ where the edges are assumed to hav
                     and the peak wavenumber, and returns how it should be scaled
                     & 0.7\\\hline
             g    & acceleration due to gravity. & 9.81\\\hline
-            h0   & base still water depth &bathymetry[0]
+            h0   & base still water depth &bathymetry[0] \\\hline
+	P & Wind pressure coefficient. Atmospheric pressure is set to be
+                    $P\cdot \eta_x$ to simulate the wind effect, unless P\_atmos is over-
+                    written in the step() method.
+                    See Zdyrski and Feddersen (2021) & 0
 \end{optarglist}
 \pagebreak
 
@@ -129,10 +133,10 @@ method &
 Optional arguments specific to a method (e.g. tolerance for implicit methods) can be passed into \texttt{step()}, which will be transferred to the method when called. In particular, \texttt{P\_atmos} is common to all integration methods, and is shown below.
 
 \begin{optarglist}
-P\_atmos & Atmospheric pressure at the surface. This can be either a function with arguments \texttt{eta,phiS,eta\_x,phiS\_x,w} or a numpy array of length \texttt{Nx}. See the beginning of section (2.2) for more specifics on the function. & array of zeros
+P\_atmos & Atmospheric pressure at the surface. This can be either a function with arguments \texttt{eta,phiS,eta\_x,phiS\_x,w} or a numpy array of length \texttt{Nx}. See the beginning of section (2.2) for more specifics on the function. & wind\_pressure()
 \end{optarglist}
 
-
+Note that wind\_pressure() uses the simulation's \texttt{P} value, so by default, there is no atmospheric pressure when \texttt{P} $ = 0$.
 
 
 
@@ -290,7 +294,7 @@ save\_eta &
                     $\phi^S$. & True\\\hline
         cdf\_Pderiv
                   &The string that should populate the P\_deriv field in the
-                    netcdf file. & ``zero"\\\hline
+                    netcdf file. By default this will take the value ``zero" if this instance's \texttt{P} value is 0 and ``wind" otherwise. & (see description)\\\hline
         cdf\_timeunits
                   & The string that specifies the units of time for the
                     simulation. & ``seconds"\\\hline
@@ -368,18 +372,18 @@ already exists, then it is overwritten with a new file.
 
 \begin{arglist}
         filename
-                  & The name of the file to be saved. Overwrites existing files\\\hline
-
-        h\_invariant
-                  & Whether the simulation should be treated as if h does not
-                    vary with time\\\hline
-        
-        P\_deriv
-                  & Information on how pressure is obtained. Expects ``zero",
-                    ``wind" or ``custom".
+                  & The name of the file to be saved. Overwrites existing files
 \end{arglist}
 
 \begin{optarglist}
+
+        h\_invariant
+                  & Whether the simulation should be treated as if h does not
+                    vary with time & True \\\hline
+        P\_deriv
+                  & Information on how pressure is obtained. Expects ``zero",
+                    ``wind" or ``custom". 
+By default this will take the value ``zero" if this instance's \texttt{P} value is 0 and ``wind" otherwise. & (see description) \\\hline
         timeunits    
               & A string representing the units for time. & ``seconds" \\\hline
 
@@ -391,13 +395,12 @@ already exists, then it is overwritten with a new file.
 
                     If it is "wind", then the P attribute is set to this value.
 
-                    If it is "custom", then P is the P\_a variable at time index 0. & 0\\\hline
+                    If it is "custom", then P is the P\_a variable at time index 0. & simulator \texttt{P}\\\hline
         
         close
              & Whether or not this method should close the netcdf file
                     resource after initialization. &  True
 \end{optarglist}
-
 
 
 
@@ -595,6 +598,20 @@ Takes additional arguments:
 max\_iters & The most iterations used to achieve the desired tolerance, after which, RK4 is defaulted to. & 100\\\hline
 tol & The tolerance allowed for the iteration to stop. & $10^{-10}$
 \end{optarglist}
+
+\pagebreak
+
+\section{Validation}
+We use the properties of the soliton wave to validate our model. In the flat, unforced case, we run the model up to 20 seconds with $dx = 0.03,~dt=0.0025$ using the classic $4^{th}$ order Runge-Kutta scheme and compare the results with both a soliton shifted by $$\Delta x = t v_p = 20\sqrt{g(h_0-a_0)}$$ and a soliton overlayed on the model such that the peaks match.
+
+\includegraphics[scale=0.3]{f_uf__eta_vs_x.png}
+
+\includegraphics[scale=0.3]{f_uf__etaerror_vs_x.png}
+
+\includegraphics[scale=0.3]{f_uf__error_int_vs_a.png}
+
+
+
 
 
 
