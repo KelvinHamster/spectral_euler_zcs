@@ -510,7 +510,9 @@ chi & Vectorized low-pass filter. Any function in the wavenumber domain can appl
 kxdb\_im & The precomputed value $ik \chi(k)$, which is computed from \texttt{complex(0,1) * kxdb * chi}. This should only be modified when chi is modified.\\\hline
 
 t & The time the simulation has run. This is only ever incremented by an integration method inside a \texttt{step()} call, and can be freely modified and accessed externally.
+\\\hline
 
+P & Wind pressure coefficient. The surface pressure is found as $P_a = \mathtt{P}\cdot\eta_x$. This can be modified externally.
 \end{arglist}
 
 

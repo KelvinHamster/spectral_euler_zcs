@@ -379,7 +379,7 @@ class Simulator1D():
         return z0 + (z1-z0)*d
 
     def run_simulation(self, saveplot_dt, savedata_dt, directory,
-            should_continue = lambda sim: sim.t > 500,
+            should_continue = lambda sim: sim.t <= 500,
             integrator = "RK4",
             save_eta = None,
             save_phi = None,
@@ -521,8 +521,8 @@ class Simulator1D():
             #append the data to the buffer
             if not flush_only:
                 netcdf_buffer_t.append(sim.t)
-                netcdf_buffer_eta.append(sim.eta)
-                netcdf_buffer_pS.append(sim.phiS)
+                netcdf_buffer_eta.append(sim.eta.copy())
+                netcdf_buffer_pS.append(sim.phiS.copy())
                 if cdf_h_invariant == 0:
                     netcdf_buffer_h.append(sim.h0 - sim.zeta)
             #if the buffer is full or we force a flush, write it out
@@ -686,6 +686,8 @@ class Simulator1D():
         f.length = np.array((self.Nx*self.dx),dtype=np.float64)
         f.h_invariant = h_invariant
         f.P_deriv = P_deriv
+        if P_deriv == "wind":
+            f.P = P
 
         f.createDimension('time', None)
         f.createDimension('x', self.Nx)
