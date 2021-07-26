@@ -694,6 +694,38 @@ bracketed value is replaced by the relevant quantity. & (see description)\\\hlin
  gui &
 Whether or not to run this program with matplotlib's plotting features. Use \texttt{gui=False} when running with no GUI access. & True
 \end{optarglist}
+\pagebreak
 
 
+
+\section{Application to the sloped-forced case}
+
+We attempt to recreate the results in \emph{Wind-induced changes to shoaling surface gravity wave shape}, which has the following parameters for non-dimensionalization:
+$$\varepsilon_0 = \frac{H_0}{h_0},~~ \mu_0 = \left(\frac{h_0}{L_0}\right)^2, ~~P_0 = \frac{P}{\rho_w g L_0},~~ \gamma_0 = \frac{L_0}{L_b}~~~~(2.5)$$
+where $H_0$ is the initial wave height ($a_0$ in Knowles and Yeh (2018)), $L_0$ is the effective half-width (as in Knowles and Yeh (2018)), defined to be $L_0 = h_0\sqrt{\frac{4h_0}{3H_0}}$ in (3.2), and $L_b = \frac{h_0}{\beta}$ is the length of the beach slope ($\beta$ is the value of the slope).
+
+In (2.6), the following nondimensionalization is used:
+$$x = L_0x',~~h = h'h_0,~~z=h_0z',~~\eta = H_0\eta'$$
+$$t = \frac{t'L_0}{\sqrt{gh_0}},~~\phi = \phi' H_0 L_0 \sqrt{\frac{g}{h_0}}$$
+
+To relate to our simulation, we examine the boundary condition involving pressure:
+$$0 = \varepsilon_0P_0 \frac{\partial \eta'}{\partial x'} + \eta' + \frac{\partial\phi'}{\partial t'} + \frac{\varepsilon_0}{2}\left(\left(\frac{\partial \phi'}{\partial x'}\right)^2 + \frac{1}{\mu_0}\left(\frac{\partial \phi'}{\partial z'}\right)^2\right)$$
+We notice $\partial\phi' = \partial\phi\frac{1}{H_0L_0}\sqrt{\frac{h_0}{g}},~~\partial t' = \partial t\frac{\sqrt{gh_0}}{L_0},~~\partial \eta' = \frac{\partial\eta}{H_0},~~\partial x' = \frac{\partial x}{L_0}$, so
+$$\frac{\partial \phi'}{\partial t'} = \frac{\partial\phi}{\partial t}\cdot \frac{1}{H_0g},~~~\frac{\partial \eta'}{\partial x'} = \frac{\partial \eta}{\partial x} \cdot \frac{L_0}{H_0}$$
+$$\frac{\partial \phi}{\partial t} = -\varepsilon_0P_0L_0g \frac{\partial \eta}{\partial x} - H_0g\eta'- \frac{\varepsilon_0H_0g}{2}\left(\left(\frac{\partial \phi'}{\partial x'}\right)^2 - \frac{1}{\mu_0}\left(\frac{\partial \phi'}{\partial z'}\right)^2\right)$$
+
+The parameters provided are
+$$\eta_0,~~\mu_0,~~\frac{P}{\rho_w g L_0 \varepsilon_0}=\frac{P_0}{\varepsilon_0},~~\beta$$
+
+Our $P$-value (simply the coefficient to the $\eta_x$ term), what will be denoted as $\bar P$, is related to $P_0/\varepsilon_0$ as
+$$\bar P = \varepsilon_0P_0L_0g = \frac{H_0^2}{h_0^2}\frac{P_0}{\varepsilon_0}L_0g= \frac{P_0}{\varepsilon_0}\cdot \frac{H_0^2}{h_0}\sqrt{\frac{4h_0}{3H_0}}g= \frac{P_0}{\varepsilon_0}\cdot 2\frac{H_0^{\frac{3}{2}}}{\sqrt {3h_0}}g$$
+\pagebreak
+
+The bathymetry starts at $h_0=1$ and slopes up with slope $\beta$, up to $h = 0.1$, (corresponding to $d_0 = 0.9$). The model has a 20 unit distance between the left boundary and the start of the slope.
+The soliton is placed on that boundary, which we cannot do because our simulation mirrors onto the double domain and does not wrap onto it. Instead, we use $X_0 = 120$ as our soliton initial position, and $X_1 = 140$ as the location of the beach toe (exact position, not relative to $X_0$). This means that our parameters to put into \texttt{wind\_effect} are
+$$dx = 0.1,~~dt=0.01,~~a_0=0.2 \text{ (from }\varepsilon_0 = 0.2\text{ in Table 1, p. 9)}$$
+$$s_0 = 0.01,0.015,0.02,0.025 \text{ (from }\beta \text{ taking those values in Table 1)}$$
+$$X_0 = 120,~~X_1=140,~~N_x \text{ large enough to have at least 20 units of beach plateau}$$
+$$\bar P = \frac{P_0}{\varepsilon_0}\cdot 2\frac{0.2^{\frac{3}{2}}}{\sqrt {3}}\cdot 9.81 = 1.013\frac{P_0}{\varepsilon_0} \text{ (for each pressure value $\frac{P_0}{\varepsilon_0}$ in Table 1)}$$
+$$~~~~~~ = 0.00317, 0.00633, 0.0127, 0.0253, 0.0507$$
 \end{document}
