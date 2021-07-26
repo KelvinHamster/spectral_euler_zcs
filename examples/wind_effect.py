@@ -66,6 +66,7 @@ else:
 sim = Simulator1D(bathym,dt,dx,
     *Simulator1D.soliton(args.X0,a0,h0,Nx,dx),
     v=lowpass, P=wind_coeff)
+sim.a0 = a0
 
 
 plot_dt = args.plotstep
@@ -73,11 +74,16 @@ base_volume = sim.volume()
 
 import matplotlib.pyplot as plt
 def stop_cond(sim):
+    #max time
+    #volume conservation
+    #froude number stop at 0.8
     return sim.t <= timestop and \
-            abs(sim.volume() - base_volume) < 0.005 * sim.sim_length
+            abs(sim.volume() - base_volume) < 0.005 * sim.sim_length and\
+            (sim.max_v / np.sqrt(9.81)) <= 0.8
 def callback(sim,step,shouldplot,shoulddata):
     if step % 100 == 0:
-        print(f"Time: {round(sim.t,3)}, Volume difference: {abs(sim.volume() - base_volume)}")
+        print(f"Time: {round(sim.t,3)}, Volume difference: {abs(sim.volume() - base_volume)}"\
+            + f", Fr: {sim.max_v/np.sqrt(9.81)}")
     if shouldplot and plot_spectrum:
         KE = (sim.phiS * sim.calculate_time_derivatives(
                 sim.eta, sim.phiS, sim.zeta, sim.zeta_x,

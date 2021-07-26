@@ -53,7 +53,7 @@ class Simulator1D():
         self.eta = eta0; self.phiS = phiS0
         
         self.M = M; self.g = g
-        if h0 == None:
+        if h0 is None:
             self.h0 = -bathymetry[0]
         else:
             self.h0 = h0
@@ -87,7 +87,7 @@ class Simulator1D():
         self.kxdb_im = self.kxdb * complex(0,1)
         self.kxdb_im *= self.chi
         
-        if zeta_x == None:
+        if zeta_x is None:
             # gradient of bathymetry; just use divided difference
             self.zeta_x = np.zeros(self.Nx)
             self.zeta_x[1:-1] = (self.zeta[2:] - self.zeta[:-2])/(2*dx)
@@ -102,6 +102,8 @@ class Simulator1D():
         self.P = P # wind pressure coefficient
 
         self.t = 0 # time in the simulation
+
+        self.max_v = self.maximum_velocity()
 
     def step(self, method, P_atmos = None, *args, **kwargs):
         """
@@ -118,7 +120,7 @@ class Simulator1D():
               - Atmospheric pressure at the surface. By default, this is the
                 function wind_pressure
         """
-        if P_atmos == None:
+        if P_atmos is None:
             P_atmos = self.wind_pressure
         
         if callable(method):
@@ -179,6 +181,10 @@ class Simulator1D():
         phiS_x = self.calculate_gradient(phiS)
 
         w = self.vertvel(eta, phiS, zeta, zeta_x, zeta_t)
+        
+        #we have all values, so might as well update max_v
+        self.max_v = self.maximum_velocity(
+                eta_x = eta_x, phiS_x = phiS_x, w = w)
 
         if callable(P_a):
             return self.diff_eval(eta, phiS_x, eta_x, w,
@@ -332,6 +338,28 @@ class Simulator1D():
                 dbdzfs_mat[m,:self.M - m,:self.Nx]
             ),axis=0)
         return w
+
+    def maximum_velocity(self, eta_x = None, phiS_x = None, w = None):
+        """
+        Calculates and returns the maximum value of
+        sqrt( phiS_x^2 + (1+eta_x^2)w^2 )
+        
+        Each component is an optional argument, which if passed in,
+        will mean that it will not have to be calculated in this method.
+        """
+        if eta_x is None:
+            eta_x = self.calculate_gradient(self.eta)
+        
+        if phiS_x is None:
+            phiS_x = self.calculate_gradient(self.phiS)
+
+        if w is None:
+            w = self.vertvel(self.eta, self.phiS, self.zeta,
+                    self.zeta_x, np.zeros(self.Nx))
+
+        return np.max(np.sqrt(
+            phiS_x**2 + (1+eta_x**2)*(w**2)
+        ))
 
     def volume(self):
         """
@@ -495,14 +523,14 @@ class Simulator1D():
             method = integrator
             integrator = lambda sim: sim.step(method)
 
-        if loop_callback == None:
+        if loop_callback is None:
             def cb(sim, step, plot, data):
                 if step % 100 == 0:
                     #print(f"Time: {round(sim.t,3)}")
                     print("Time: "+str(round(sim.t,3)))
             loop_callback = cb
         
-        if cdf_Pderiv == None:
+        if cdf_Pderiv is None:
             cdf_Pderiv = "zero" if self.P == 0 else "wind"
 
         if save_netcdf:
@@ -514,6 +542,7 @@ class Simulator1D():
         netcdf_buffer_eta = []
         netcdf_buffer_pS = []
         netcdf_buffer_h = []
+        netcdf_buffer_maxv = []
         #call whenever we want to put the next timestep in the netcdf file
         def append_netcdf(sim, step, flush_only = False):
             if not save_netcdf:
@@ -523,6 +552,7 @@ class Simulator1D():
                 netcdf_buffer_t.append(sim.t)
                 netcdf_buffer_eta.append(sim.eta.copy())
                 netcdf_buffer_pS.append(sim.phiS.copy())
+                netcdf_buffer_maxv.append(sim.max_v)
                 if cdf_h_invariant == 0:
                     netcdf_buffer_h.append(sim.h0 - sim.zeta)
             #if the buffer is full or we force a flush, write it out
@@ -537,6 +567,7 @@ class Simulator1D():
                     #copy values
                     f.variables['eta'][i] = netcdf_buffer_eta[j]
                     f.variables['pS'][i] = netcdf_buffer_pS[j]
+                    f.variables['max_v'][i] = netcdf_buffer_maxv[j]
                     # set bathymetry if variant
                     if cdf_h_invariant == 0:
                         f.variables['h'][i] = netcdf_buffer_h[j]
@@ -546,6 +577,7 @@ class Simulator1D():
                 netcdf_buffer_eta.clear()
                 netcdf_buffer_pS.clear()
                 netcdf_buffer_h.clear()
+                netcdf_buffer_maxv.clear()
 
         step = 0
 
@@ -557,7 +589,7 @@ class Simulator1D():
         datastep = round(savedata_dt/self.dt)
         savedata = datastep > 0
         
-        if plot_func == None and saveplot:
+        if plot_func is None and saveplot:
             import matplotlib.pyplot as plt
             def do_plot(sim, filename):
                 plt.plot(sim.x, sim.eta, "b")
@@ -669,9 +701,9 @@ class Simulator1D():
                   - Whether or not this method should close the netcdf file
                     resource after initialization.
         """
-        if P_deriv == None:
+        if P_deriv is None:
             P_deriv = "zero" if self.P == 0 else "wind"
-        if P == None:
+        if P is None:
             P = self.P
         # initialize the file
         f = netcdf.netcdf_file(filename, 'w')
@@ -710,6 +742,8 @@ class Simulator1D():
         ps[0] = self.phiS
         chi = f.createVariable('chi', np.float64, ('x',))
         chi[:] = self.chi[:self.Nx]
+        max_v = f.createVariable('max_v', np.float64, ('time', ))
+        max_v[0] = self.max_v
         if close:
             f.close()
         return f
